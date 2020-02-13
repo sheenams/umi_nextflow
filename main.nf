@@ -3,8 +3,13 @@
 // Setup the various inputs, defined in nexflow.config
 params.input_folder = '/mnt/disk10/users/sheenams/umi_nextflow/test/'
 fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
-reference_fasta = file("/mnt/disk2/com/Genomes/gatk-bundle/human_g1k_v37.fasta")
-reference_index = Channel.fromPath("/mnt/disk2/com/Genomes/gatk-bundle/human_g1k_v37.fasta.{amb,ann,bwt,pac,sa}")
+
+reference_fasta = Channel.fromPath("/mnt/disk2/com/Genomes/gatk-bundle/human_g1k_v37.fasta")
+reference_index = Channel.fromPath("/mnt/disk2/com/Genomes/gatk-bundle/human_g1k_v37.fasta.{amb,ann,bwt,pac,sa,dict}")
+
+ // Reference genome is used multiple times
+reference_fasta.into { bwa_ref; bwa_realign_ref; picard_ref }
+reference_index.into { bwa_ref_index; bwa_realign_ref_index; picard_ref_index}
 
 /* process simple_bwa {
   echo true 
@@ -13,92 +18,99 @@ reference_index = Channel.fromPath("/mnt/disk2/com/Genomes/gatk-bundle/human_g1k
     file(reference_fasta) from reference_fasta
     file("*") from reference_index.collect()
 
-    set pair_name, file(fastq1), file(fastq2) from fastq_pair_ch
+    set sample_id, file(fastq1), file(fastq2) from fastq_pair_ch
   output:
-    set val(pair_name), file('*.sam') 
-    // OR set val(pair_name), file('*.sorted.bam.bai') into mapped_bai_ch
+    set val(sample_id), file('*.sam') 
+    // OR set val(sample_id), file('*.sorted.bam.bai') into mapped_bai_ch
   cpus 8
     
   """ 
   
-  bwa mem -R "@RG\\tID:${pair_name}\\tSM:${pair_name}" -Y -t ${task.cpus} ${reference_fasta} ${fastq1} ${fastq2}  > ${pair_name}.sam
+  bwa mem -R "@RG\\tID:${sample_id}\\tSM:${sample_id}" -Y -t ${task.cpus} ${reference_fasta} ${fastq1} ${fastq2}  > ${sample_id}.sam
   
   """
 } */
 
 process bwa {
+  // Align fastqs
   label 'bwa'
   input:
-    file(reference_fasta) from reference_fasta
-    file("*") from reference_index.collect()
-    set pair_name, file(fastq1), file(fastq2) from fastq_pair_ch
+    file(reference_fasta) from bwa_ref
+    file("*") from bwa_ref_index.collect()
+    set sample_id, file(fastq1), file(fastq2) from fastq_pair_ch
 
   output:
-    set val(pair_name), file('*.sam') into align_ch
+    set val(sample_id), file('*.sam') into align_ch
 
   cpus 8
   """ 
   bwa mem \
-  -R "@RG\\tID:${pair_name}\\tSM:${pair_name}" \
+  -R "@RG\\tID:${sample_id}\\tSM:${sample_id}" \
   -K 10000000 \
   -C \
   -Y \
   -t ${task.cpus} \
   ${reference_fasta} \
-  ${fastq1} ${fastq2} > ${pair_name}.sam
+  ${fastq1} ${fastq2} > ${sample_id}.sam
   """
 } 
-process sort_bam {
+
+process sort_sam {
+  // Sort alignment by query name
   label 'picard'
   input: 
-    set val(pair_name), file(sam) from align_ch
+    set val(sample_id), file(sam) from align_ch
 
   output:
-    set val(pair_name), file('*.sorted.bam') into sorted_bam_ch
+    set val(sample_id), file('*.sorted.bam') into set_mate_ch 
 
   """
   java -Xmx4g -jar /opt/picard.jar \
   SortSam \
   I=${sam} \
-  O=${pair_name}.sorted.bam \
+  O=${sample_id}.sorted.bam \
   SORT_ORDER=queryname
   """
 }
 
-// ToDo: create alignment image with bwa and samtools 
+// ToDo: create alignment image with bwa and picard 
+
 process fgbio_setmateinformation{
+  // Adds and/or fixes mate information on paired-end reads
   label 'fgbio'
   input: 
-    set val(pair_name), file(bam) from sorted_bam_ch
+    set val(sample_id), file(bam) from set_mate_ch
 
   output:
-    set val(pair_name), file('*.mateinfo.bam') into mate_info_bam_ch
+    set val(sample_id), file('*.mateinfo.bam') into mate_info_bam_ch
   """
   java -Xmx4g -jar /opt/fgbio-1.1.0.jar \
   SetMateInformation \
   --input ${bam} \
-  --output ${pair_name}.mateinfo.bam
+  --output ${sample_id}.mateinfo.bam
   """
 }
+
 process fgbio_group_umi {
+  // Groups reads together that appear to have come from the same original molecule.
   label 'fgbio'
   input: 
-    set val(pair_name), file(bam) from mate_info_bam_ch
+    set val(sample_id), file(bam) from mate_info_bam_ch
 
   output:
-    set val(pair_name), file('*.grpumi.bam') into grp_umi_bam_ch
-    set val(pair_name), file('*.grpumi.histogram') into histogram_ch
+    set val(sample_id), file('*.grpumi.bam') into grp_umi_bam_ch
+    set val(sample_id), file('*.grpumi.histogram') into histogram_ch
 
   """
   java -Xmx4g -jar /opt/fgbio-1.1.0.jar \
   GroupReadsByUmi \
   --input=${bam} \
-  --output=${pair_name}.grpumi.bam \
-  --family-size-histogram=${pair_name}.grpumi.histogram \
+  --output=${sample_id}.grpumi.bam \
+  --family-size-histogram=${sample_id}.grpumi.histogram \
   --strategy=adjacency
   """
 }
-
+// ToDo: implement munge html parser 
 /* 
 umi_html,umi_table = e.Command(
     target=['$pfxout/${specimen}.umi_metrics.html',
@@ -125,44 +137,132 @@ process fgbio_callconsensus{
 
   label 'fgbio'
   input: 
-    set val(pair_name), file(bam) from grp_umi_bam_ch
+    set val(sample_id), file(bam) from grp_umi_bam_ch
 
   output:
-    set val(pair_name), file('*.consensus.bam') into consensus_bam_ch
+    set val(sample_id), file('*.consensus.bam') into (consensus_bam_ch, consensus_fastq_ch)
 
   """
   java -Xmx4g -jar /opt/fgbio-1.1.0.jar \
   CallMolecularConsensusReads \
   --input=${bam} \
-  --output=${pair_name}.consensus.bam \
+  --output=${sample_id}.consensus.bam \
   --min-reads=2 \
-  --read-name-prefix=${pair_name} \
-  --read-group-id=${pair_name} \
+  --read-name-prefix=${sample_id} \
+  --read-group-id=${sample_id} \
   --error-rate-pre-umi=45 \
   --error-rate-post-umi=40 \
   --min-input-base-quality=10 \
   --output-per-base-tags=true \
-  --sort-order=Queryname
   """
 }
- 
+
+// Should we filter? http://fulcrumgenomics.github.io/fgbio/tools/latest/FilterConsensusReads.html
+
+process bam_to_fastqs {
+  label 'picard'
+  input:
+    set val(sample_id), file(bam) from consensus_fastq_ch
+
+  output:
+    set val(sample_id), file('*.fastq') into consensus_fastq
+
+  """
+  java -Xmx4g -jar /opt/picard.jar \
+  SamToFastq \
+  I=${bam} \
+  FASTQ=${sample_id}.fastq \
+  INTERLEAVE=true
+  """
+}
+
+process realign_consensus {
+  label 'bwa'
+  input:
+    set val(sample_id), file(fastq) from consensus_fastq
+    file(reference_fasta) from bwa_realign_ref
+    file("*") from bwa_realign_ref_index.collect()
+
+  output:
+    set val(sample_id), file('*.realign.sam') into realign_ch
+
+  cpus 8 
+  """
+  bwa mem \
+  -R "@RG\\tID:${sample_id}\\tSM:${sample_id}" \
+  -K 10000000 \
+  -p \
+  -Y \
+  -t ${task.cpus} \
+  ${reference_fasta} \
+  ${fastq} > ${sample_id}.realign.sam
+  """
+}
+
+process sort_realign_sam {
+  // Sort alignment by query name
+  label 'picard'
+  input: 
+    set val(sample_id), file(sam) from realign_ch
+
+  output:
+    set val(sample_id), file('*.sorted.bam') into sorted_realign_consensus_ch 
+
+  """
+  java -Xmx4g -jar /opt/picard.jar \
+  SortSam \
+  I=${sam} \
+  O=${sample_id}.sorted.bam \
+  SORT_ORDER=queryname
+  """
+}
+process final_bam {
+// Merge consensus bam (unaligned) with aligned bam
+  label 'picard'
+  input:
+    set val(sample_id), file(consensus_bam) from consensus_bam_ch
+    set val(sample_id), file(sorted_bam) from sorted_realign_consensus_ch
+    file(reference_fasta) from picard_ref
+    file("*") from picard_ref_index.collect()
+    
+  output:
+    set val(sample_id), file('*.final.bam') into final_bam
+
+  """
+  java -Xmx4g -jar /opt/picard.jar \
+  MergeBamAlignment \
+  UNMAPPED=${consensus_bam} \
+  ALIGNED=${sorted_bam} \
+  O=${sample_id}.final.bam \
+  R=${reference_fasta} \
+  CREATE_INDEX=true \
+  VALIDATION_STRINGENCY=SILENT \
+  SORT_ORDER=coordinate
+  """
+}
+ /*
+
+  SortSam \
+  I=${sam} \
+  O=${sample_id}.sorted.bam \
+  SORT_ORDER=queryname
 process remap_consensus{
     // input: callconsensus.bam
     // tools: samtools, bwa mem, picard
     // files: .cns_remap.bam, .cns_final.bam, logs/sampe.log, remapped.log
-      label 'fgbio'
+      label fgbio
   input: 
-    set val(pair_name), file(bam) from mate_info_bam_ch
+    set val(sample_id), file(bam) from mate_info_bam_ch
 
   output:
-    set val(pair_name), file('*.grpumi.bam') into grp_umi_bam_ch
-    set val(pair_name), file('*.grpumi.histogram') into histogram_ch
+    set val(sample_id), file('*.grpumi.bam') into grp_umi_bam_ch
+    set val(sample_id), file('*.grpumi.histogram') into histogram_ch
 
   """
-  java -Xmx4g -jar /opt/fgbio-1.1.0.jar GroupReadsByUmi --input=${bam} --output=${pair_name}.grpumi.bam --family-size-histogram=${pair_name}.grpumi.histogram --strategy=adjacency
+  java -Xmx4g -jar /opt/fgbio-1.1.0.jar GroupReadsByUmi --input=${bam} --output=${sample_id}.grpumi.bam --family-size-histogram=${sample_id}.grpumi.histogram --strategy=adjacency
   """
 }
-/*
+
 cns_remap_bam, log = e.Command(
     target=['$pfxout/${specimen}.cns_remap.bam',
             '$logs/sampe.log'],
@@ -194,14 +294,9 @@ cns_final_bam, log = e.Command(
             '2> ${TARGETS[1]} '
             '&& mv $pfxout/${specimen}.cns_final.bai $pfxout/${specimen}.cns_final.bam.bai '))
 e.Depends(cns_final_bam, [cns_bam, cns_remap_bam])
-*/
-process baserecal {
-   // #tools: gatk, samtools
-    //#files:.recal_table, bqsr.bam,final.bam, logs/gatk_bqsr.log,logs/gatk_apply_bqsr.log 
-    // final_bam=SConscript('bqsr.scons', exports='e cns_final_bam')
-    
-}
-/*
+
+
+
 process quality_metrics {
   // tools: picard, munge 
   // files: #files:.hs_metrics,logs/HsMetrics.log,.Quality_Analysis.txt
