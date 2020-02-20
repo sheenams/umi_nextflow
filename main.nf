@@ -3,11 +3,11 @@
 //ToDo: specify assay information 
 
 // Assay specific files
-picard_bed_file = Channel.fromPath('/mnt/disk2/com/Genomes/Picard/MONC_v1.Picard.bed')
-bed_file = Channel.fromPath('/mnt/disk2/com/Genomes/BED_Files/MONC_v1_chr_no_chr.bed')
+picard_bed_file = Channel.fromPath('/mnt/disk2/com/Genomes/Picard/MONC_ctDNA1.3_designed_probe_coords_180314_no_chr.Picard.bed')
+bed_file = Channel.fromPath('/mnt/disk2/com/Genomes/BED_Files/MONC_ctDNA1.3_designed_probe_coords_180314_no_chr.bed')
 
 // Setup the various inputs, defined in nexflow.config
-fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
+fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true) //.println { it }
 
 reference_fasta = Channel.fromPath("/mnt/disk2/com/Genomes/gatk-bundle/human_g1k_v37.fasta")
 reference_index = Channel.fromPath("/mnt/disk2/com/Genomes/gatk-bundle/human_g1k_v37.fasta.{amb,ann,bwt,pac,sa,dict,fai}")
@@ -57,8 +57,6 @@ process bwa {
 
    output:
      set val(sample_id), file('*.sorted.bam') into (temp_qc_initial_bam, set_mate_ch)
-
-   publishDir params.output, overwrite: true
   
    memory '32GB'
    
@@ -85,7 +83,6 @@ process bwa {
    output:
      set val(sample_id), file('*.mateinfo.bam') into mate_info_bam_ch
 
-   publishDir params.output, overwrite: true
    memory "32GB"
 
    script:
@@ -109,7 +106,6 @@ process bwa {
      set val(sample_id), file('*.grpumi.bam') into grp_umi_bam_ch
      set val(sample_id), file('*.grpumi.histogram') into histogram_ch
 
-   publishDir params.output, overwrite: true
    memory "32G"
 
    script:
@@ -156,7 +152,6 @@ process bwa {
    output:
      set val(sample_id), file('*.consensus.bam') into consensus_bam_ch
   
-   publishDir params.output, overwrite: true
    memory "32G"
 
    script:
@@ -190,7 +185,6 @@ process bwa {
    output:
      set val(sample_id), file('*.filtered_consensus.bam') into (filter_consensus_bam_ch, consensus_fastq_ch)
 
-   publishDir params.output, overwrite: true
    memory "32G"
 
    script:
@@ -242,7 +236,6 @@ process bwa {
    output:
      set val(sample_id), file('*.fastq') into consensus_fastq
   
-   publishDir params.output, overwrite: true
    memory "32G"
 
    script:
@@ -266,8 +259,6 @@ process bwa {
 
    output:
      set val(sample_id), file('*.realign.sam') into realign_ch
-
-   publishDir params.output, overwrite: true
   
    cpus 8 
 
@@ -295,7 +286,6 @@ process bwa {
    output:
      set val(sample_id), file('*.sorted.bam') into sorted_realign_consensus_ch 
   
-   publishDir params.output, overwrite: true
    memory "32 GB"
   
    script:
@@ -399,6 +389,7 @@ process bwa {
      set val(sample_id), file('*.vardict.vcf') into vardict_vcf_ch
 
    publishDir params.output, overwrite: true
+
    memory "32G"
 
    cpus 8
@@ -426,9 +417,7 @@ process bwa {
    -N ${sample_id} \
    -f 0.000000000001 \
    > ${sample_id}.vardict.vcf
-
    """
-
  }
  
  
