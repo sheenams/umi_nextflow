@@ -2,12 +2,11 @@
 
 ## Pipeline respositories
 
-Scons based UMI pipeline - https://gitlab.labmed.uw.edu/genetics/umi_pipeline
-NextFlow based UMI pipeline - https://github.com/sheenams/umi_nextflow
-(note NF pipeline also moved here: https://gitlab.labmed.uw.edu/genetics/umi_nextflow)
+* SCons based UMI pipeline - https://gitlab.labmed.uw.edu/genetics/umi_pipeline
+* NextFlow based UMI pipeline - https://github.com/sheenams/umi_nextflow
+* (note NF pipeline also moved here: https://gitlab.labmed.uw.edu/genetics/umi_nextflow)
 
 ## Research runs
-
 
 * 191212_NB0330_MiniOncoKAPA263R-MONCv1
 * 200103_HA0717_MiniOncoKAPA266R-MONCv1
@@ -15,19 +14,22 @@ NextFlow based UMI pipeline - https://github.com/sheenams/umi_nextflow
 
 ## Archival location for those runs
 
-/mnt/disk16/genetics/archival/tgc_output/191212_NB0330_MiniOncoKAPA263R-MONCv1
-/mnt/disk16/genetics/archival/tgc_output/200103_HA0717_MiniOncoKAPA266R-MONCv1
-/mnt/disk16/genetics/archival/tgc_output/200213_NB0357_MiniOncoKAPA280R-MONCv1
+* /mnt/disk16/genetics/archival/tgc_output/191212_NB0330_MiniOncoKAPA263R-MONCv1
+* /mnt/disk16/genetics/archival/tgc_output/200103_HA0717_MiniOncoKAPA266R-MONCv1
+* /mnt/disk16/genetics/archival/tgc_output/200213_NB0357_MiniOncoKAPA280R-MONCv1
+
+Some data also is located here:
+* /mnt/disk16/genetics/MONC_FULL_DATA/
 
 ## Analysis Locations
 
-Larf: /home/genetics/analysis/TGC/191212_NB0330_MiniOncoKAPA263R-MONCv1
-Larf: /home/genetics/analysis/TGC/200103_HA0717_MiniOncoKAPA266R-MONCv1
+* Larf: /home/genetics/analysis/TGC/191212_NB0330_MiniOncoKAPA263R-MONCv1
+* Larf: /home/genetics/analysis/TGC/200103_HA0717_MiniOncoKAPA266R-MONCv1
 
 ## Working locations for 263R, 266R, 280R and related code
-/mnt/disk10/users/sheenams/umi_nextflow/
-/mnt/disk10/users/sheenams/umi_pipeline_nf/
-/mnt/disk10/users/sheenams/ngstools-umi/
+* /mnt/disk10/users/sheenams/umi_nextflow/
+* /mnt/disk10/users/sheenams/umi_pipeline_nf/
+* /mnt/disk10/users/sheenams/ngstools-umi/
 
 ## Sample Information
 
@@ -55,12 +57,12 @@ Larf: /home/genetics/analysis/TGC/200103_HA0717_MiniOncoKAPA266R-MONCv1
 ## Older UMI Data locations
 
 see /mnt/disk10/users/sheenams/UMI-do-no-delete/ for runs:
-180125_MA0337_MiniOnco165R-MONCv1
-181001_NA0300_MiniOncoKAPA190R-MONCv1
-190109_NA0318_MiniOncoKAPA207R-MONCv1-UMI
-190121_NA0322_MiniOncoKAPA209R-MONCv1
-180411_NA0261_MiniOncoKAPA165R-MONCv1
-190109_NA0318_MiniOncoKAPA207R-MONCv1
-190109_NA0318_MiniOncoKAPA207R-MONCv1-UMI-singletons
+* 180125_MA0337_MiniOnco165R-MONCv1
+* 181001_NA0300_MiniOncoKAPA190R-MONCv1
+* 190109_NA0318_MiniOncoKAPA207R-MONCv1-UMI
+* 190121_NA0322_MiniOncoKAPA209R-MONCv1
+* 180411_NA0261_MiniOncoKAPA165R-MONCv1
+* 190109_NA0318_MiniOncoKAPA207R-MONCv1
+* 190109_NA0318_MiniOncoKAPA207R-MONCv1-UMI-singletons
 
 
