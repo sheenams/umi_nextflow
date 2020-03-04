@@ -8,9 +8,10 @@ NextFlow based UMI pipeline - https://github.com/sheenams/umi_nextflow
 
 ## Research runs
 
-191212_NB0330_MiniOncoKAPA263R-MONCv1
-200103_HA0717_MiniOncoKAPA266R-MONCv1
-200213_NB0357_MiniOncoKAPA280R-MONCv1
+
+* 191212_NB0330_MiniOncoKAPA263R-MONCv1
+* 200103_HA0717_MiniOncoKAPA266R-MONCv1
+* 200213_NB0357_MiniOncoKAPA280R-MONCv1
 
 ## Archival location for those runs
 
