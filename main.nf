@@ -3,14 +3,14 @@
 //ToDo: specify assay information 
 
 // Assay specific files
-picard_bed_file = Channel.fromPath('/mnt/disk2/com/Genomes/Picard/MONC_ctDNA1.3_designed_probe_coords_180314_no_chr.Picard.bed')
-bed_file = Channel.fromPath('/mnt/disk2/com/Genomes/BED_Files/MONC_ctDNA1.3_designed_probe_coords_180314_no_chr.bed')
+picard_bed_file = Channel.fromPath(params.picard_bed)
+bed_file = Channel.fromPath(params.bed)
 
 // Setup the various inputs, defined in nexflow.config
 fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true) //.println { it }
 
-reference_fasta = Channel.fromPath("/mnt/disk2/com/Genomes/gatk-bundle/human_g1k_v37.fasta")
-reference_index = Channel.fromPath("/mnt/disk2/com/Genomes/gatk-bundle/human_g1k_v37.fasta.{amb,ann,bwt,pac,sa,dict,fai}")
+reference_fasta = Channel.fromPath(ref_fasta)
+reference_index = Channel.fromPath(ref_index)
 
  // Reference genome is used multiple times
 reference_fasta.into { bwa_ref; bwa_realign_ref; picard_ref; qc_ref; filter_con_ref ; vardict_ref}
