@@ -6,6 +6,10 @@
 * NextFlow based UMI pipeline - https://github.com/sheenams/umi_nextflow
 * (note NF pipeline also moved here: https://gitlab.labmed.uw.edu/genetics/umi_nextflow)
 
+## Helpful links
+* [IDT Bioinformatics Workflow](https://sfvideo.blob.core.windows.net/sitefinity/docs/default-source/user-guide-manual/analysis-guideline-variant-calling-data-with-umis.pdf?sfvrsn=d0aa3207_26)
+
+
 ## Research runs
 
 * 191212_NB0330_MiniOncoKAPA263R-MONCv1
