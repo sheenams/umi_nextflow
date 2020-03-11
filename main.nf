@@ -7,7 +7,8 @@ picard_bed_file = Channel.fromPath(params.picard_bed)
 bed_file = Channel.fromPath(params.bed)
 
 // Setup the various inputs, defined in nexflow.config
-fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true) //.println { it }
+fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
+  .take(1).println { it }
 
 reference_fasta = Channel.fromPath(ref_fasta)
 reference_index = Channel.fromPath(ref_index)
@@ -16,10 +17,9 @@ reference_index = Channel.fromPath(ref_index)
 reference_fasta.into { bwa_ref; bwa_realign_ref; picard_ref; qc_ref; filter_con_ref ; vardict_ref}
 reference_index.into { bwa_ref_index; bwa_realign_ref_index; picard_ref_index; qc_ref_index; filter_con_ref_index; vardict_ref_index }
 
- //  memory "32GB"
 
 process bwa {
-   // Align fastqs
+  // Align fastqs
   label 'bwa'
   tag "${sample_id}"
   input:
@@ -28,43 +28,46 @@ process bwa {
     set sample_id, file(fastq1), file(fastq2) from fastq_pair_ch
 
   output:
-    set val(sample_id), file('*.sam') into align_ch
+    set val(sample_id), file('*.bam') into align_ch
+    file("*.bai")
 
   publishDir params.output, overwrite: true
-
-  cpus 8
   
   script:
-  """ 
+  // bwa mem options:
+  // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?
+  """
   bwa mem \
-  -R "@RG\\tID:${sample_id}\\tSM:${sample_id}" \
-  -K 10000000 \
-  -C \
-  -Y \
-  -t ${task.cpus} \
-  ${reference_fasta} \
-  ${fastq1} ${fastq2} > ${sample_id}.sam
+    -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
+    -K 10000000 \
+    -C \
+    -Y \
+    -t${task.cpus}  \
+    ${reference_fasta} ${fastq1} ${fastq2} 2> log.txt \
+  | samtools sort -t@${task.cpus} -m4G - -o ${sample_id}.bam
+  
+  samtools index ${sample_id}.bam
   """
 } 
 
  process sort_sam {
-  //  Sort alignment by query name
+   //  Sort alignment by query name
    label 'picard'
    tag "${sample_id}"
 
    input: 
-     set val(sample_id), file(sam) from align_ch
+     set val(sample_id), file(bam) from align_ch
 
    output:
      set val(sample_id), file('*.sorted.bam') into (temp_qc_initial_bam, set_mate_ch)
-  
-   memory '32GB'
    
+   memory "32GB"
+
    script:
    """
    java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
    SortSam \
-   I=${sam} \
+   I=${bam} \
    O=${sample_id}.sorted.bam \
    SORT_ORDER=queryname
    """
@@ -107,6 +110,7 @@ process bwa {
      set val(sample_id), file('*.grpumi.histogram') into histogram_ch
 
    memory "32G"
+   publishDir params.output, overwrite: true
 
    script:
    """
@@ -153,7 +157,7 @@ process bwa {
      set val(sample_id), file('*.consensus.bam') into consensus_bam_ch
   
    memory "32G"
-
+   publishDir params.output, overwrite: true
    script:
    """
    java -Xmx${task.memory.toGiga()}g -jar /opt/fgbio-1.1.0.jar \
@@ -186,7 +190,7 @@ process bwa {
      set val(sample_id), file('*.filtered_consensus.bam') into (filter_consensus_bam_ch, consensus_fastq_ch)
 
    memory "32G"
-
+   publishDir params.output, overwrite: true
    script:
    """
    java -Xmx${task.memory.toGiga()}g -jar /opt/fgbio-1.1.0.jar \
