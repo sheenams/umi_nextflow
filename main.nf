@@ -63,7 +63,7 @@ process bwa {
    script:
    //java -Xmx${task.memory.toGiga()}g -jar /usr/local/share/picard-2.9.2-1/picard.jar \
    """
-   picard -Xmx{task.memory.toGiga()}g \
+   picard -Xmx${task.memory.toGiga()}g \
    SortSam \
    I=${bam} \
    O=${sample_id}.sorted.bam \
