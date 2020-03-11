@@ -61,8 +61,9 @@ process bwa {
    memory "32GB"
 
    script:
+   //java -Xmx${task.memory.toGiga()}g -jar /usr/local/share/picard-2.9.2-1/picard.jar \
    """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
+   picard -Xmx{task.memory.toGiga()}g \
    SortSam \
    I=${bam} \
    O=${sample_id}.sorted.bam \
