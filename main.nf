@@ -1,17 +1,14 @@
 #!/usr/bin/env nextflow
 
-//ToDo: specify assay information 
-
-// Assay specific files
-picard_bed_file = Channel.fromPath(params.picard_bed)
-bed_file = Channel.fromPath(params.bed)
-
 // Setup the various inputs, defined in nexflow.config
 fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
   .take(1).println { it }
 
-reference_fasta = Channel.fromPath(ref_fasta)
-reference_index = Channel.fromPath(ref_index)
+// Assay specific files
+picard_bed_file = Channel.fromPath(params.picard_bed)
+bed_file = Channel.fromPath(params.bed)
+reference_fasta = Channel.fromPath(params.ref_fasta)
+reference_index = Channel.fromPath(params.ref_index)
 
  // Reference genome is used multiple times
 reference_fasta.into { bwa_ref; bwa_realign_ref; picard_ref; qc_ref; filter_con_ref ; vardict_ref}
