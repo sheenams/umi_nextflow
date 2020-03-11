@@ -1,0 +1,13 @@
+{
+    "properties": {
+        "input_folder": {
+            "default": "s3://uwlm-personal/nkrumm/umi/fastq/280R/",
+            "title": "Folder with FASTQs",
+            "type": "string"
+        }
+    },
+    "required": [
+        "input_folder"
+    ],
+    "type": "object"
+}
