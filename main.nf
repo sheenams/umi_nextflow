@@ -1,8 +1,7 @@
 #!/usr/bin/env nextflow
 
 // Setup the various inputs, defined in nexflow.config
-fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
-  .take(1).view()
+fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true).view()
 
 // Assay specific files
 picard_bed_file = Channel.fromPath(params.picard_bed)
