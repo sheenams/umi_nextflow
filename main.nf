@@ -4,12 +4,12 @@
 fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true).view()
 
 // Assay specific files
-picard_bed_file = Channel.fromPath(params.picard_bed)
-bed_file = Channel.fromPath(params.bed)
+picard_bed_file = Channel.value(params.picard_bed)
+bed_file = Channel.value(params.bed)
+
+// Reference genome is used multiple times
 reference_fasta = Channel.fromPath(params.ref_fasta)
 reference_index = Channel.fromPath(params.ref_index)
-
- // Reference genome is used multiple times
 reference_fasta.into { bwa_ref; bwa_realign_ref; picard_ref; qc_ref; filter_con_ref }
 reference_index.into { bwa_ref_index; bwa_realign_ref_index; picard_ref_index; qc_ref_index; filter_con_ref_index }
 
