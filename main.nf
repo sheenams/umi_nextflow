@@ -11,8 +11,8 @@ reference_fasta = Channel.fromPath(params.ref_fasta)
 reference_index = Channel.fromPath(params.ref_index)
 
  // Reference genome is used multiple times
-reference_fasta.into { bwa_ref; bwa_realign_ref; picard_ref; qc_ref; filter_con_ref ; vardict_ref}
-reference_index.into { bwa_ref_index; bwa_realign_ref_index; picard_ref_index; qc_ref_index; filter_con_ref_index; vardict_ref_index }
+reference_fasta.into { bwa_ref; bwa_realign_ref; picard_ref; qc_ref; filter_con_ref }
+reference_index.into { bwa_ref_index; bwa_realign_ref_index; picard_ref_index; qc_ref_index; filter_con_ref_index }
 
 
 process bwa {
@@ -363,76 +363,4 @@ process bwa {
   """
   }
 
- process vardict {
-   /*
-   -C  #Indicate the chromosome names are just numbers, such as 1, 2, not chr1, chr2
-   -F 0  #The hexical to filter reads using samtools. Default: 0x500 (filter 2nd alignments and duplicates).  Use -F 0 to turn it off
-   -f 0.000000000001   #The threshold for allele frequency, default: 0.05 or 5%
-   -N ${specimen}  #The sample name to be used directly
-   -b ${SOURCES[0]} 
-   -c 1  #The column for chromosome
-   -S 2  #The column for the region start, e.g. gene start
-   -E 3  #The column for the region end, e.g. gene end
-   -g 4  #The column for gene name, or segment annotation
-   -r 1  #The minimum # of variant reads, default 2
-   -q 10  #The phred score for a base to be considered a good call.  Default: 25 (for Illumina), set to 10 to match
-   */
-   label 'vardict'
-   tag "${sample_id}"
  
-   input:
-     set val(sample_id), file(bam) from vardict_final_bam_ch
-     file(bed_file) from bed_file
-     file(reference_fasta) from vardict_ref
-     file("*") from vardict_ref_index.collect()
-
-   output:
-     set val(sample_id), file('*.vardict.vcf') into vardict_vcf_ch
-
-   publishDir params.output, overwrite: true
-
-   memory "32G"
-
-   cpus 8
-
-   script:
-   """
-   VarDict \
-   -G ${reference_fasta} \
-   -C  \
-   -F 0 \
-   -f 0.000000000001 \
-   -N ${sample_id} \
-   -b ${bam} \
-   -c 1 \
-   -S 2 \
-   -E 3 \
-   -g 4 \
-   -r 1 \
-   -q 1 \
-   -VS SILENT \
-   -th ${task.cpus} \
-   ${bed_file} |
-   teststrandbias.R | 
-   var2vcf_valid.pl \
-   -N ${sample_id} \
-   -f 0.000000000001 \
-   > ${sample_id}.vardict.vcf
-   """
- }
- 
- 
-  /*
- process picard_mark_duplicates {
-      For validation, run mark duplicates on initial mapped_bam and final_bam
- }
-
-  process coverage {
-     #tools: bedtools 
-     #files: MeanCoverageBED.txt
-     base_cov,coverage_metrics=SConscript('bedcov.scons', exports='e assay_items final_bam')
-     e.Depends([base_cov,coverage_metrics], final_bam)
- } 
-
-
-  */
