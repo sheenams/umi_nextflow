@@ -4,13 +4,12 @@
 fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true).view()
 
 // Assay specific files
-picard_bed_file = Channel.value(params.picard_bed)
-bed_file = Channel.value(params.bed)
+picard_bed_file = file(params.picard_bed)
+bed_file = file(params.bed)
 
 // Reference genome is used multiple times
-reference_fasta = Channel.fromPath(params.ref_fasta)
+reference_fasta = file(params.ref_fasta)
 reference_index = Channel.fromPath(params.ref_index)
-reference_fasta.into { bwa_ref; bwa_realign_ref; picard_ref; qc_ref; filter_con_ref }
 reference_index.into { bwa_ref_index; bwa_realign_ref_index; picard_ref_index; qc_ref_index; filter_con_ref_index }
 
 
@@ -19,7 +18,7 @@ process bwa {
   label 'bwa'
   tag "${sample_id}"
   input:
-    file(reference_fasta) from bwa_ref
+    file(reference_fasta) from reference_fasta
     file("*") from bwa_ref_index.collect()
     set sample_id, file(fastq1), file(fastq2) from fastq_pair_ch
 
@@ -160,7 +159,7 @@ process bwa {
    tag "${sample_id}"
 
    input: 
-     file(reference_fasta) from filter_con_ref
+     file(reference_fasta) from reference_fasta
      file("*") from filter_con_ref_index.collect()
      set val(sample_id), file(bam) from consensus_bam_ch
 
@@ -236,7 +235,7 @@ process bwa {
 
    input:
      set val(sample_id), file(fastq) from consensus_fastq
-     file(reference_fasta) from bwa_realign_ref
+     file(reference_fasta) from reference_fasta
      file("*") from bwa_realign_ref_index.collect()
 
    output:
@@ -288,7 +287,7 @@ process bwa {
    input:
      set val(sample_id), file(consensus_bam) from sorted_filter_consensus_ch
      set val(sample_id), file(sorted_bam) from sorted_realign_consensus_ch
-     file(reference_fasta) from picard_ref
+     file(reference_fasta) from reference_fasta
      file("*") from picard_ref_index.collect()
     
    output:
@@ -323,7 +322,7 @@ process bwa {
    input:
      file(bed_file) from picard_bed_file
      set val(sample_id), file(bam) from qc_final_bam
-     file(reference_fasta) from qc_ref
+     file(reference_fasta) from reference_fasta
      file("*") from qc_ref_index.collect()
 
    output:
