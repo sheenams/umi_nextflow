@@ -9,43 +9,48 @@ bed_file = file(params.bed)
 
 // Reference genome is used multiple times
 reference_fasta = file(params.ref_fasta)
-reference_index = Channel.fromPath(params.ref_index)
-reference_index.into { bwa_ref_index; bwa_realign_ref_index; picard_ref_index; qc_ref_index; filter_con_ref_index }
+reference_index = Channel.fromPath(params.ref_index).into { 
+  bwa_ref_index;
+  bwa_realign_ref_index;
+  picard_ref_index;
+  qc_ref_index;
+  filter_con_ref_index
+}
 
 
 process bwa {
-  // Align fastqs
-  label 'bwa'
-  tag "${sample_id}"
-  input:
-    file(reference_fasta) from reference_fasta
-    file("*") from bwa_ref_index.collect()
-    set sample_id, file(fastq1), file(fastq2) from fastq_pair_ch
-
-  output:
-    set val(sample_id), file('*.bam') into align_ch
-    file("*.bai")
-
-  publishDir params.output, overwrite: true
-  
-  script:
-  // bwa mem options:
-  // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?
-  """
-  bwa mem \
-    -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
-    -K 10000000 \
-    -C \
-    -Y \
-    -t${task.cpus}  \
-    ${reference_fasta} ${fastq1} ${fastq2} 2> log.txt \
-  | samtools sort -t@${task.cpus} -m4G - -o ${sample_id}.bam
-  
-  samtools index ${sample_id}.bam
-  """
+   // Align fastqs
+   label 'bwa'
+   tag "${sample_id}"
+   input:
+     file(reference_fasta) from reference_fasta
+     file("*") from bwa_ref_index.collect()
+     set sample_id, file(fastq1), file(fastq2) from fastq_pair_ch
+ 
+   output:
+     set val(sample_id), file('*.bam') into align_ch
+     file("*.bai")
+ 
+   publishDir params.output, overwrite: true
+   
+   script:
+   // bwa mem options:
+   // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?
+   """
+   bwa mem \
+     -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
+     -K 10000000 \
+     -C \
+     -Y \
+     -t${task.cpus}  \
+     ${reference_fasta} ${fastq1} ${fastq2} 2> log.txt \
+   | samtools sort -t@${task.cpus} -m4G - -o ${sample_id}.bam
+   
+   samtools index ${sample_id}.bam
+   """
 } 
 
- process sort_sam {
+process sort_sam {
    //  Sort alignment by query name
    label 'picard'
    tag "${sample_id}"
@@ -68,7 +73,7 @@ process bwa {
    """
  }
 
- process fgbio_setmateinformation{
+process fgbio_setmateinformation{
   //  Adds and/or fixes mate information on paired-end reads
    label 'fgbio'
    tag "${sample_id}"
@@ -90,7 +95,7 @@ process bwa {
    """
  }
 
- process fgbio_group_umi {
+process fgbio_group_umi {
    // Groups reads together that appear to have come from the same original molecule.
    label 'fgbio'
    tag "${sample_id}"
@@ -116,14 +121,15 @@ process bwa {
    """
  }
 
- process fgbio_callconsensus{
-   /*  Combined each set of reads to generate consensus reads
+process fgbio_callconsensus{
+   /* 
+      Combined each set of reads to generate consensus reads
       1. base qualities are adjusted
       2. consensus sequence called for all reads with the same UMI, base-by-base.
       3. consensus raw base quality is modified by incorporating the probability of an error prior to
       calls each end of a pair independently, and does not jointly call bases that overlap within a pair. Insertion or deletion
       errors in the reads are not considered in the consensus model.integrating the unique molecular tags
-      */
+   */
    label 'fgbio'
    tag "${sample_id}"
 
@@ -135,6 +141,7 @@ process bwa {
   
    memory "32G"
    publishDir params.output, overwrite: true
+
    script:
    """
    fgbio -Xmx${task.memory.toGiga()}g \
@@ -152,7 +159,7 @@ process bwa {
    """
  }
 
- process fgbio_filterconsensus{
+process fgbio_filterconsensus{
   //  --reverse-per-base-tags
 
    label 'fgbio'
@@ -168,6 +175,7 @@ process bwa {
 
    memory "32G"
    publishDir params.output, overwrite: true
+
    script:
    """
    fgbio -Xmx${task.memory.toGiga()}g \
@@ -183,7 +191,7 @@ process bwa {
    """
  }
 
- process sort_filter_bam {
+process sort_filter_bam {
    // Sort alignment by query name
    label 'picard'
    tag "${sample_id}"
@@ -207,7 +215,7 @@ process bwa {
    """
  }
 
- process bam_to_fastqs {
+process bam_to_fastqs {
    label 'picard'
    tag "${sample_id}"
 
@@ -257,7 +265,7 @@ process bwa {
  }
 
  process sort_realign_sam {
-  //  Sort alignment by query name
+   //  Sort alignment by query name
    label 'picard'
    tag "${sample_id}"
 
@@ -280,7 +288,7 @@ process bwa {
  }
 
  process final_bam {
-  //Merge consensus bam (unaligned) with aligned bam
+   //Merge consensus bam (unaligned) with aligned bam
    label 'picard'
    tag "${sample_id}"
 
@@ -312,10 +320,6 @@ process bwa {
  }
 
   process quality_metrics {
-   /* tools: picard, munge 
-    files: #files:.hs_metrics,logs/HsMetrics.log,.Quality_Analysis.txt
-    inputs mapped_bam, final_bam
-    */
    label 'picard'
    tag "${sample_id}"
 
@@ -341,7 +345,5 @@ process bwa {
    REFERENCE_SEQUENCE=${reference_fasta} \
    INPUT=${bam} \
    OUTPUT=${sample_id}.hs_metrics
-  """
-  }
-
- 
+   """
+   }
