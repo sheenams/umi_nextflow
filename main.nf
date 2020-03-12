@@ -69,8 +69,6 @@ process bwa {
    """
  }
 
- // ToDo: create alignment image with bwa and picard 
-
  process fgbio_setmateinformation{
   //  Adds and/or fixes mate information on paired-end reads
    label 'fgbio'
@@ -118,22 +116,6 @@ process bwa {
    --strategy=adjacency
    """
  }
-  //ToDo: implement munge html parser 
- /* 
- umi_html,umi_table = e.Command(
-     target=['$pfxout/${specimen}.umi_metrics.html',
-             '$pfxout/${specimen}.umi_metrics.csv'],
-     source=grp_umi_histo,
-     action=('$sing_exec_genome '
-             '$IMAGES/python-2.7-new.simg '
-             '$GENOMES/src/munge-umi/munge plot_umi '
-             '$SOURCE '
-             '${TARGETS[0]} '
-             '${TARGETS[1]} '))
- e.Depends(umi_html, grp_umi_histo)"""
-      output files: grpumi.bam, .grpumi.histogram, umi_metrics.html, logs/fgbio_groupreadsbyumi.log
-      input: mapped_bam
- } */
 
  process fgbio_callconsensus{
    /*  Combined each set of reads to generate consensus reads
