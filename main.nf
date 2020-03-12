@@ -312,6 +312,7 @@ process bwa {
     
    output:
      set val(sample_id), file('*.final.bam') into (qc_final_bam, vardict_final_bam_ch)
+     file("*.bai")
   
    publishDir params.output, overwrite: true
    memory "32G"
