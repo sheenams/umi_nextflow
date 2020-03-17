@@ -28,7 +28,7 @@ process bwa {
      set sample_id, file(fastq1), file(fastq2) from fastq_pair_ch
  
    output:
-     set val(sample_id), file('*.bam') into align_ch
+     set val(sample_id), file('*.bam') into (align_ch, fastqc_ch, qc_standard_bam)
      file("*.bai")
  
    publishDir params.output, overwrite: true
@@ -137,7 +137,7 @@ process fgbio_callconsensus{
      set val(sample_id), file(bam) from grp_umi_bam_ch
 
    output:
-     set val(sample_id), file('*.consensus.bam') into consensus_bam_ch
+     set val(sample_id), file('*.consensus.bam') into (consensus_bam_ch, qc_consensus_bam)
   
    memory "32G"
    publishDir params.output, overwrite: true
@@ -171,7 +171,7 @@ process fgbio_filterconsensus{
      set val(sample_id), file(bam) from consensus_bam_ch
 
    output:
-     set val(sample_id), file('*.filtered_consensus.bam') into (filter_consensus_bam_ch, consensus_fastq_ch)
+     set val(sample_id), file('*.filtered_consensus.bam') into (filter_consensus_bam_ch, consensus_fastq_ch, qc_filtered_consensus_bam)
 
    memory "32G"
    publishDir params.output, overwrite: true
@@ -319,18 +319,31 @@ process bam_to_fastqs {
    """
  }
 
-  process quality_metrics {
+
+// ######### QC ######### //
+
+// Combine channels for quality here
+// into a single quality_ch for processing below.
+
+qc_final_bam.mix(
+  qc_standard_bam, 
+  qc_consensus_bam,
+  qc_filtered_consensus_bam
+).into { hs_metrics_ch, mosdepth_qc_ch } 
+
+
+process quality_metrics {
    label 'picard'
    tag "${sample_id}"
 
    input:
      file(bed_file) from picard_bed_file
-     set val(sample_id), file(bam) from qc_final_bam
+     set val(sample_id), file(bam) from hs_metrics_ch
      file(reference_fasta) from reference_fasta
      file("*") from qc_ref_index.collect()
 
    output:
-     set val(sample_id), file('*.hs_metrics') into qc_metrics
+     path('*.hs_metrics') into qc_metrics
   
    publishDir params.output, overwrite: true
    memory "32G"
@@ -346,4 +359,71 @@ process bam_to_fastqs {
    INPUT=${bam} \
    OUTPUT=${sample_id}.hs_metrics
    """
-   }
+}
+
+process fastqc {
+  label 'fastqc'
+  tag "${sample_id}"
+  container 'quay.io/biocontainers/fastqc:0.11.8--1'
+  tag "${sample_id}"
+  cpus 2
+  memory '4 GB'
+
+  publishDir params.output, pattern: "*.html", mode: "copy", overwrite: true
+
+  input:
+    set val(sample_id), fastq1, fastq2 from fastqc_ch
+  output:
+    path "fastqc/*", type:"dir" into fastqc_report_ch
+
+  script:
+  fastqc_path = "fastqc/${sample_id}/"
+  """
+  mkdir -p ${fastqc_path}
+  zcat ${fastqs[0]} ${fastqs[1]} | fastqc --quiet -o ${fastqc_path} stdin:${sample_id}
+  """
+}
+
+process mosdepth {
+   label 'mosdepth_qc'
+   tag "${sample_id}"
+   container "quay.io/biocontainers/mosdepth:0.2.9--hbeb723e_0"
+   memory '4 GB'
+   cpus 4 // per docs, no benefit after 4 threads
+ 
+   input:
+      file(bed_file) from bed_file
+      set val(sample_id), file(bam) from mosdepth_qc_ch
+   output:
+      file "${sample_id}.regions.bed.gz"
+      file "${sample_id}.mosdepth.dist.txt"
+      file "${sample_id}.mosdepth.global.dist.txt" into mosdepth_out_ch
+
+   publishDir params.output
+
+   script:
+   """
+   mosdepth -t ${task.cpus} --by ${bed} --no-per-base --fast-mode ${sample_id} ${bam}
+   """
+}
+
+
+process multiqc {
+  label 'multiqc'
+  tag "${sample_id}"
+  container 'quay.io/biocontainers/multiqc:1.7--py_4'
+  memory '4 GB'
+  cpus 4
+  input:
+     path('fastqc.*') from fastqc_report_ch.flatMap().collect()
+     path('*.hs_metrics') from qc_metrics.flatMap().collect()
+     path("*.mosdepth.global.dist.txt") from mosdepth_out_ch.flatMap().collect()
+
+  output:
+     file "multiqc_report.${params.run_id}.html"
+  publishDir params.output, saveAs: {f -> "multiqc/${f}"}, mode: "copy", overwrite: true
+  script:
+  """
+  multiqc -v -d --filename "multiqc_report.${params.run_id}.html" .
+  """
+}

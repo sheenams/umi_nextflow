@@ -1,4 +1,5 @@
 {
 	"input_folder": "s3://uwlm-personal/nkrumm/umi/fastq/280R/",
-	"output": "s3://uwlm-personal/nkrumm/umi/out/"
+	"output": "s3://uwlm-personal/nkrumm/umi/out/",
+	"run_id": "280R"
 }
