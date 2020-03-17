@@ -108,7 +108,7 @@ process fgbio_group_umi {
 
    output:
      set val(sample_id), file('*.grpumi.bam') into grp_umi_bam_ch
-     set val(sample_id), file('*.grpumi.histogram') into histogram_ch
+     file('*.grpumi.histogram') into histogram_ch
 
    memory "32G"
    publishDir params.output, overwrite: true
@@ -399,7 +399,7 @@ process mosdepth {
       set val(sample_id), file(bam), file(bai) from mosdepth_qc_ch
    output:
       file "${sample_id}.regions.bed.gz"
-      file "${sample_id}.mosdepth.global.dist.txt" into mosdepth_out_ch
+      file "${sample_id}.mosdepth.regions.dist.txt" into mosdepth_out_ch
 
    publishDir params.output
 
@@ -419,6 +419,7 @@ process multiqc {
   input:
      path('fastqc.*') from fastqc_report_ch.flatMap().collect()
      path('*.hs_metrics') from qc_metrics.flatMap().collect()
+     path('*.grpumi.histogram') from histogram_ch.flatMap().collect()
      path("*.mosdepth.global.dist.txt") from mosdepth_out_ch.flatMap().collect()
 
   output:
