@@ -375,7 +375,7 @@ process fastqc {
   publishDir params.output, pattern: "*.html", mode: "copy", overwrite: true
 
   input:
-    set val(sample_id), fastq1, fastq2 from fastqc_ch
+    set val(sample_id), file(fastq1), file(fastq2) from fastqc_ch
   output:
     path "fastqc/*", type:"dir" into fastqc_report_ch
 
