@@ -1,7 +1,7 @@
 #!/usr/bin/env nextflow
 
 // Setup the various inputs, defined in nexflow.config
-fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true).view()
+fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true).take(1).view()
 
 // Assay specific files
 picard_bed_file = file(params.picard_bed)
@@ -329,7 +329,7 @@ qc_final_bam.mix(
   qc_standard_bam, 
   qc_consensus_bam,
   qc_filtered_consensus_bam
-).into { hs_metrics_ch, mosdepth_qc_ch } 
+).into{ hs_metrics_ch; mosdepth_qc_ch } 
 
 
 process quality_metrics {
