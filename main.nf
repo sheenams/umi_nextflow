@@ -398,8 +398,8 @@ process mosdepth {
       file(bed) from bed_file
       set val(sample_id), file(bam), file(bai) from mosdepth_qc_ch
    output:
-      file "${sample_id}.region.bed.gz"
-      file "${sample_id}.mosdepth.regions.dist.txt" into mosdepth_out_ch
+      file "${sample_id}.regions.bed.gz"
+      file "${sample_id}.mosdepth.region.dist.txt" into mosdepth_out_ch
 
    publishDir params.output
 
