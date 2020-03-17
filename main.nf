@@ -392,7 +392,7 @@ process mosdepth {
    cpus 4 // per docs, no benefit after 4 threads
  
    input:
-      file(bed_file) from bed_file
+      file(bed) from bed_file
       set val(sample_id), file(bam) from mosdepth_qc_ch
    output:
       file "${sample_id}.regions.bed.gz"
