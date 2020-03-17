@@ -380,7 +380,7 @@ process fastqc {
   fastqc_path = "fastqc/${sample_id}/"
   """
   mkdir -p ${fastqc_path}
-  zcat ${fastqs[0]} ${fastqs[1]} | fastqc --quiet -o ${fastqc_path} stdin:${sample_id}
+  zcat ${fastq1} ${fastq2} | fastqc --quiet -o ${fastqc_path} stdin:${sample_id}
   """
 }
 
