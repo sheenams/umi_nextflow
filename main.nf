@@ -151,7 +151,7 @@ process fgbio_callconsensus{
    CallMolecularConsensusReads \
    --input=${bam} \
    --output=${sample_id}.consensus.bam \
-   --min-reads=0 \
+   --min-reads=1 \
    --read-name-prefix=${sample_id} \
    --read-group-id=${sample_id} \
    --error-rate-pre-umi=45 \
