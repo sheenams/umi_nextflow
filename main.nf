@@ -1,7 +1,10 @@
 #!/usr/bin/env nextflow
 
 // Setup the various inputs, defined in nexflow.config
-fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true).take(1).view()
+fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
+                       .take(1)
+                       .view()
+                       .into{align_input; fastqc_ch}
 
 // Assay specific files
 picard_bed_file = file(params.picard_bed)
@@ -25,10 +28,10 @@ process bwa {
    input:
      file(reference_fasta) from reference_fasta
      file("*") from bwa_ref_index.collect()
-     set sample_id, file(fastq1), file(fastq2) from fastq_pair_ch
+     set sample_id, file(fastq1), file(fastq2) from align_input
  
    output:
-     set val(sample_id), file('*.bam') into (align_ch, fastqc_ch, qc_standard_bam)
+     set val(sample_id), file('*.bam'), file('*.bai') into (align_ch, qc_standard_bam)
      file("*.bai")
  
    publishDir params.output, overwrite: true
@@ -56,7 +59,7 @@ process sort_sam {
    tag "${sample_id}"
 
    input: 
-     set val(sample_id), file(bam) from align_ch
+     set val(sample_id), file(bam), file(bai) from align_ch
 
    output:
      set val(sample_id), file('*.sorted.bam') into (temp_qc_initial_bam, set_mate_ch)
@@ -299,7 +302,7 @@ process bam_to_fastqs {
      file("*") from picard_ref_index.collect()
     
    output:
-     set val(sample_id), file('*.final.bam') into (qc_final_bam, vardict_final_bam_ch)
+     set val(sample_id), file('*.final.bam'), file('*.bai') into qc_final_bam
      file("*.bai")
   
    publishDir params.output, overwrite: true
@@ -325,11 +328,11 @@ process bam_to_fastqs {
 // Combine channels for quality here
 // into a single quality_ch for processing below.
 
-qc_final_bam.mix(
-  qc_standard_bam, 
-  qc_consensus_bam,
-  qc_filtered_consensus_bam
-).into{ hs_metrics_ch; mosdepth_qc_ch } 
+//qc_consensus_bam,
+//qc_filtered_consensus_bam
+
+qc_final_bam.mix(qc_standard_bam)
+            .into{ hs_metrics_ch; mosdepth_qc_ch } 
 
 
 process quality_metrics {
@@ -338,7 +341,7 @@ process quality_metrics {
 
    input:
      file(bed_file) from picard_bed_file
-     set val(sample_id), file(bam) from hs_metrics_ch
+     set val(sample_id), file(bam), file(bai) from hs_metrics_ch
      file(reference_fasta) from reference_fasta
      file("*") from qc_ref_index.collect()
 
@@ -392,8 +395,8 @@ process mosdepth {
    cpus 4 // per docs, no benefit after 4 threads
  
    input:
-      file(bed) from bed_file
-      set val(sample_id), file(bam) from mosdepth_qc_ch
+      file(bed_file) from bed_file
+      set val(sample_id), file(bam), file(bai) from mosdepth_qc_ch
    output:
       file "${sample_id}.regions.bed.gz"
       file "${sample_id}.mosdepth.dist.txt"
