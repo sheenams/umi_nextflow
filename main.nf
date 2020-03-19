@@ -367,10 +367,9 @@ process quality_metrics {
 
    picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    CollectInsertSizeMetrics \
+   INCLUDE_DUPLICATES=true \
    INPUT=${bam} \
-   OUTPUT=${sample_id}.${bam_type}.insert_size_metrics
-
-   # INCLUDE_DUPLICATES
+   OUTPUT=${sample_id}.${bam_type}.insert_size_metrics   
    """
 }
 
