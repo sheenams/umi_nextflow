@@ -347,7 +347,8 @@ process quality_metrics {
      file("*") from qc_ref_index.collect()
 
    output:
-     path('*.hs_metrics') into qc_metrics
+     path('*.hs_metrics') into hs_metrics_out_ch
+     path('*.insert_size_metrics') into insert_size_metrics_ch
   
    publishDir params.output, overwrite: true
    memory "32G"
@@ -361,7 +362,15 @@ process quality_metrics {
    TARGET_INTERVALS=${bed_file} \
    REFERENCE_SEQUENCE=${reference_fasta} \
    INPUT=${bam} \
-   OUTPUT=${sample_id}_${bam_type}.hs_metrics
+   OUTPUT=${sample_id}.${bam_type}.hs_metrics
+
+
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+   CollectInsertSizeMetrics \
+   INPUT=${bam} \
+   OUTPUT=${sample_id}.${bam_type}.insert_size_metrics
+
+   # INCLUDE_DUPLICATES
    """
 }
 
@@ -419,7 +428,8 @@ process multiqc {
   cpus 4
   input:
      path('*') from fastqc_report_ch.flatMap().collect()
-     path('*') from qc_metrics.flatMap().collect()
+     path('*') from hs_metrics_out_ch.flatMap().collect()
+     path('*') from insert_size_metrics_ch.flatMap().collect()
      path('*') from histogram_ch.flatMap().collect()
      path("*") from mosdepth_out_ch.flatMap().collect()
 
