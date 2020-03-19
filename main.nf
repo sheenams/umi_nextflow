@@ -69,7 +69,7 @@ process sort_sam {
 
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    SortSam \
    I=${bam} \
    O=${sample_id}.sorted.bam \
@@ -92,7 +92,7 @@ process fgbio_setmateinformation{
 
    script:
    """
-   fgbio -Xmx${task.memory.toGiga()}g \
+   fgbio -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./\
    SetMateInformation \
    --input ${bam} \
    --output ${sample_id}.mateinfo.bam
@@ -116,7 +116,7 @@ process fgbio_group_umi {
 
    script:
    """
-   fgbio -Xmx${task.memory.toGiga()}g \
+   fgbio -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./\
    GroupReadsByUmi \
    --input=${bam} \
    --output=${sample_id}.grpumi.bam \
@@ -148,7 +148,7 @@ process fgbio_callconsensus{
 
    script:
    """
-   fgbio -Xmx${task.memory.toGiga()}g \
+   fgbio -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./\
    CallMolecularConsensusReads \
    --input=${bam} \
    --output=${sample_id}.consensus.bam \
@@ -182,7 +182,7 @@ process fgbio_filterconsensus{
 
    script:
    """
-   fgbio -Xmx${task.memory.toGiga()}g \
+   fgbio -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./\
    FilterConsensusReads \
    --input=${bam} \
    --output=${sample_id}.filtered_consensus.bam \
@@ -211,7 +211,7 @@ process sort_filter_bam {
 
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    SortSam \
    I=${bam} \
    O=${sample_id}.sorted_filtered.bam \
@@ -233,7 +233,7 @@ process bam_to_fastqs {
 
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    SamToFastq \
    I=${bam} \
    FASTQ=${sample_id}.fastq \
@@ -283,7 +283,7 @@ process bam_to_fastqs {
   
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    SortSam \
    I=${sam} \
    O=${sample_id}.sorted.bam \
@@ -311,7 +311,7 @@ process bam_to_fastqs {
 
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    MergeBamAlignment \
    UNMAPPED=${consensus_bam} \
    ALIGNED=${sorted_bam} \
@@ -354,7 +354,7 @@ process quality_metrics {
 
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    CollectHsMetrics \
    BAIT_SET_NAME=${bed_file} \
    BAIT_INTERVALS=${bed_file} \
