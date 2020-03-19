@@ -31,7 +31,8 @@ process bwa {
      set sample_id, file(fastq1), file(fastq2) from align_input
  
    output:
-     set val(sample_id), file('*.bam'), file('*.bai') into (align_ch, qc_standard_bam)
+     set val(sample_id), file('*.bam'), file('*.bai') into align_ch
+     set val(sample_id), val("standard"), file('*.bam'), file('*.bai') into qc_standard_bam
      file("*.bai")
  
    publishDir params.output, overwrite: true
@@ -47,9 +48,9 @@ process bwa {
      -Y \
      -t${task.cpus}  \
      ${reference_fasta} ${fastq1} ${fastq2} 2> log.txt \
-   | samtools sort -t@${task.cpus} -m4G - -o ${sample_id}.bam
+   | samtools sort -t@${task.cpus} -m4G - -o ${sample_id}.standard.bam
    
-   samtools index ${sample_id}.bam
+   samtools index ${sample_id}.standard.bam
    """
 } 
 
@@ -302,7 +303,7 @@ process bam_to_fastqs {
      file("*") from picard_ref_index.collect()
     
    output:
-     set val(sample_id), file('*.final.bam'), file('*.bai') into qc_final_bam
+     set val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into qc_final_bam
      file("*.bai")
   
    publishDir params.output, overwrite: true
@@ -341,7 +342,7 @@ process quality_metrics {
 
    input:
      file(bed_file) from picard_bed_file
-     set val(sample_id), file(bam), file(bai) from hs_metrics_ch
+     set val(sample_id), val(bam_type), file(bam), file(bai) from hs_metrics_ch
      file(reference_fasta) from reference_fasta
      file("*") from qc_ref_index.collect()
 
@@ -360,7 +361,7 @@ process quality_metrics {
    TARGET_INTERVALS=${bed_file} \
    REFERENCE_SEQUENCE=${reference_fasta} \
    INPUT=${bam} \
-   OUTPUT=${sample_id}.hs_metrics
+   OUTPUT=${sample_id}_${bam_type}.hs_metrics
    """
 }
 
@@ -396,16 +397,16 @@ process mosdepth {
  
    input:
       file(bed) from bed_file
-      set val(sample_id), file(bam), file(bai) from mosdepth_qc_ch
+      set val(sample_id), val(bam_type), file(bam), file(bai) from mosdepth_qc_ch
    output:
-      file "${sample_id}.regions.bed.gz"
-      file "${sample_id}.mosdepth.region.dist.txt" into mosdepth_out_ch
+      file "${sample_id}.${bam_type}.regions.bed.gz"
+      file "${sample_id}.${bam_type}.mosdepth.region.dist.txt" into mosdepth_out_ch
 
    publishDir params.output
 
    script:
    """
-   mosdepth -t ${task.cpus} --by ${bed} --no-per-base --fast-mode ${sample_id} ${bam}
+   mosdepth -t ${task.cpus} --by ${bed} --no-per-base --fast-mode ${sample_id}.${bam_type} ${bam}
    """
 }
 
@@ -413,14 +414,14 @@ process mosdepth {
 process multiqc {
   label 'multiqc'
   tag "${sample_id}"
-  container 'quay.io/biocontainers/multiqc:1.7--py_4'
+  container 'quay.io/biocontainers/multiqc:1.8--py_2'
   memory '4 GB'
   cpus 4
   input:
-     path('fastqc.*') from fastqc_report_ch.flatMap().collect()
-     path('*.hs_metrics') from qc_metrics.flatMap().collect()
-     path('*.grpumi.histogram') from histogram_ch.flatMap().collect()
-     path("*.mosdepth.global.dist.txt") from mosdepth_out_ch.flatMap().collect()
+     path('*') from fastqc_report_ch.flatMap().collect()
+     path('*') from qc_metrics.flatMap().collect()
+     path('*') from histogram_ch.flatMap().collect()
+     path("*") from mosdepth_out_ch.flatMap().collect()
 
   output:
      file "multiqc_report.${params.run_id}.html"
