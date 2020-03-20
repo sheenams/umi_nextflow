@@ -4,7 +4,7 @@ def helpMessage() {
     log.info"""
     Usage:
     The typical command for running the pipeline is as follows:
-    nextflow run main.nf --input sample.tsv -profile singularity --assay MONCv1
+    nextflow run main.nf -profile singularity --assays MONCv1
 """.stripIndent()
 }
 //ToDo: specify assay information 
