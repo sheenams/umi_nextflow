@@ -32,7 +32,6 @@ process bwa {
    output:
      set val(sample_id), file('*.bam'), file('*.bai') into align_ch
      set val(sample_id), val("standard"), file('*.bam'), file('*.bai') into qc_standard_bam
-     file("*.bai")
  
    publishDir params.output, overwrite: true
    
