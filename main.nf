@@ -368,7 +368,8 @@ process quality_metrics {
    CollectInsertSizeMetrics \
    INCLUDE_DUPLICATES=true \
    INPUT=${bam} \
-   OUTPUT=${sample_id}.${bam_type}.insert_size_metrics   
+   OUTPUT=${sample_id}.${bam_type}.insert_size_metrics \
+   HISTOGRAM_FILE=${sample_id}.${bam_type}.insert_size_histogram.pdf
    """
 }
 
