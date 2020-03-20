@@ -379,7 +379,7 @@ process fastqc {
   container 'quay.io/biocontainers/fastqc:0.11.8--1'
   tag "${sample_id}"
   cpus 2
-  memory '4 GB'
+  memory '8 GB'
 
   publishDir params.output, pattern: "*.html", mode: "copy", overwrite: true
 
