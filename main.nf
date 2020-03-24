@@ -1,98 +1,83 @@
 #!/usr/bin/env nextflow
-def helpMessage() {
-    log.info nfcoreHeader()
-    log.info"""
-    Usage:
-    The typical command for running the pipeline is as follows:
-    nextflow run main.nf -profile singularity --assays MONCv1
-""".stripIndent()
+
+// Setup the various inputs, defined in nexflow.config
+fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
+                       .view()
+                       .into{align_input; fastqc_ch}
+
+// Assay specific files
+picard_intervals = file(params.picard_intervals)
+bed_file = file(params.bed)
+
+// Reference genome is used multiple times
+reference_fasta = file(params.ref_fasta)
+reference_index = Channel.fromPath(params.ref_index).into { 
+  bwa_ref_index;
+  bwa_realign_ref_index;
+  picard_ref_index;
+  qc_ref_index;
+  filter_con_ref_index
 }
-//ToDo: specify assay information 
-params.genome = 'GRCh37'
-params.assay = 'MONCv1'
 
-// Read in the genome fasta and index
-ref_fasta = file(params.genomes[params.genome].ref_fasta, checkIfExists: true)
-ref_fasta_fai = file(params.genomes[params.genome].ref_fasta_fai, checkIfExists: true)
-
-bwa_index = Channel.fromPath(params.genomes[params.genome].bwa_index, checkIfExists: true).collect()
-ref_fasta_dict = Channel.fromPath(params.genomes[params.genome].ref_fasta_dict, checkIfExists: true).collect()
-picard_intervals = file(params.assays[params.assay].picard_intervals, checkIfExists: true)
-bed_file = file(params.assays[params.assay].bed_file, checkIfExists: true)
-
-// tupleup the various inputs, defined in nexflow.config
-fastq_pair_ch = Channel.fromFilePairs(params.input + '*{1,2}.fastq.gz', flat: true, checkIfExists: true)
-//sample_info = file(params.sample_metadata, checkIfExists: true)
-
-//print(sample_info.text)
 
 process bwa {
-   //-Y use soft clipping for supplementary alignment
-   //-K process INT input bases in each batch regardless of nThreads (for reproducibility)
-   //-C append FASTA/FASTQ comment to SAM output
-  label "bwa"
+   // Align fastqs
+   label 'bwa'
+   tag "${sample_id}"
+   input:
+     file(reference_fasta) from reference_fasta
+     file("*") from bwa_ref_index.collect()
+     tuple sample_id, file(fastq1), file(fastq2) from align_input
+ 
+   output:
+     tuple val(sample_id), file('*.bam') into align_ch
+     tuple val(sample_id), val("standard"), file('*.standard.bam'), file('*.bai') into qc_standard_bam
 
-  tag "${sample_id}"
-
-  input:
-    path ref_fasta
-    path bwa_index
-    tuple sample_id, fastq1, fastq2 from fastq_pair_ch    
-    // The path qualifier should be preferred over file to handle process input and output files when using Nextflow 19.10.0 or later. 
-    //tuple val(sample_id), path(fastq1), path(fastq2) from fastq_pair_ch
-
-
-  output:
-    tuple sample_id, "${sample_id}.sam" into align_ch
-    //tuple sample_id, path("${sample_id}.sam") into align_ch
-    //tuple val(sample_id), path("${sample_id}.sam") into align_ch
-    //tuple val(sample_id), path("*.sam") into align_ch
-
-  publishDir params.output, overwrite: true
-
-  cpus 16
-  
-  script:
-  """ 
-  bwa mem \
-  -R "@RG\\tID:${sample_id}\\tSM:${sample_id}" \
-  -K 10000000 \
-  -C \
-  -Y \
-  -t ${task.cpus} \
-  ${ref_fasta} \
-  ${fastq1} ${fastq2} > ${sample_id}.sam
-  """
+ 
+   publishDir params.output, overwrite: true
+   
+   script:
+   // bwa mem options:
+   // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?
+   """
+   bwa mem \
+     -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
+     -K 10000000 \
+     -C \
+     -Y \
+     -t${task.cpus}  \
+     ${reference_fasta} ${fastq1} ${fastq2} 2> log.txt \
+   | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.standard.bam
+   
+   samtools index ${sample_id}.standard.bam
+   """
 } 
 
-
- process sort_sam {
-  //  Sort alignment by query name
-   label "picard"
-
+process sort_bam {
+   //  Sort alignment by query name
+   label 'picard'
    tag "${sample_id}"
 
    input: 
-    tuple sample_id, path(sam) from align_ch
+     tuple val(sample_id), file(bam) from align_ch
 
    output:
-    tuple sample_id, "${sample_id}.sorted.bam" into (temp_qc_initial_bam, mate_ch)
-  
-   memory "32G"
-   
+     tuple val(sample_id), file('*.sorted.bam') into set_mate_ch
+     tuple val(sample_id), val("sorted"), file('*.sorted.bam') into temp_qc_sorted_bam
+
+   memory "32GB"
+
    script:
    """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    SortSam \
-   I=${sam} \
+   I=${bam} \
    O=${sample_id}.sorted.bam \
    SORT_ORDER=queryname
    """
  }
 
- // ToDo: create alignment image with bwa and picard 
-
- process fgbio_tuplemateinformation{
+process fgbio_setmateinformation{
   //  Adds and/or fixes mate information on paired-end reads
   // tuples the MQ (mate mapping quality), MC (mate cigar string), 
   // ensures all mate-related flag fields are tuple correctly, 
@@ -102,24 +87,26 @@ process bwa {
    tag "${sample_id}"
 
    input: 
-    tuple sample_id, path(bam) from mate_ch
+    tuple sample_id, path(bam) from set_mate_ch
 
    output:
-    tuple sample_id, "${sample_id}.mateinfo.bam" into (mate_info_bam_ch, temp_qc_mate_bam)
+    tuple sample_id, "${sample_id}.mateinfo.bam" into mate_info_bam_ch
+    tuple val(sample_id), val("set_mate"), file('*.bam') into temp_qc_mate_bam
+
 
    memory "32G"
    publishDir params.output, overwrite: true
 
    script:
    """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/fgbio-1.1.0.jar \
+   fgbio -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./\
    SetMateInformation \
    --input ${bam} \
    --output ${sample_id}.mateinfo.bam
    """
  }
 
- process fgbio_group_umi {
+process fgbio_group_umi {
    // Groups reads together that appear to have come from the same original molecule.
    label "fgbio"
 
@@ -129,16 +116,15 @@ process bwa {
     tuple sample_id, path(bam) from mate_info_bam_ch
 
    output:
-    tuple sample_id, "${sample_id}.grpumi.bam" into (grp_umi_bam_ch, temp_qc_grp_umi_bam)
-    tuple sample_id, "${sample_id}.grpumi.histogram" into histogram_ch
+     tuple val(sample_id), file('*.grpumi.bam') into grp_umi_bam_ch
+     file('*.grpumi.histogram') into histogram_ch
 
    memory "32G"
-
    publishDir params.output, overwrite: true
 
    script:
    """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/fgbio-1.1.0.jar \
+   fgbio -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./\
    GroupReadsByUmi \
    --input=${bam} \
    --output=${sample_id}.grpumi.bam \
@@ -146,35 +132,34 @@ process bwa {
    --strategy=adjacency
    """
  }
-  
- process fgbio_callconsensus{
-   //  Combined each tuple of reads to generate consensus reads
-   //    1. base qualities are adjusted
-   //   2. consensus sequence called for all reads with the same UMI, base-by-base.
-   //    3. consensus raw base quality is modified by incorporating the probability of an error prior to
-   //   calls each end of a pair independently, and does not jointly call bases that overlap within a pair. Insertion or deletion
-   //     errors in the reads are not considered in the consensus model.
-   label "fgbio"
 
+process fgbio_callconsensus{
+   //   Combined each set of reads to generate consensus reads
+   //   1. base qualities are adjusted
+   //   2. consensus sequence called for all reads with the same UMI, base-by-base.
+   //   3. consensus raw base quality is modified by incorporating the probability of an error prior to
+   //   calls each end of a pair independently, and does not jointly call bases that overlap within a pair. Insertion or deletion
+   //   errors in the reads are not considered in the consensus model.integrating the unique molecular tags
+   
+   label 'fgbio'
    tag "${sample_id}"
 
    input: 
     tuple sample_id, path(bam) from grp_umi_bam_ch
 
    output:
-    tuple sample_id, "${sample_id}.consensus.bam" into (consensus_bam_ch, temp_qc_consensus_bam)
+     tuple val(sample_id), file('*.consensus.bam') into (consensus_bam_ch, qc_consensus_bam)
   
    memory "32G"
-  
    publishDir params.output, overwrite: true
 
    script:
    """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/fgbio-1.1.0.jar \
+   fgbio -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./\
    CallMolecularConsensusReads \
    --input=${bam} \
    --output=${sample_id}.consensus.bam \
-   --min-reads=2 \
+   --min-reads=1 \
    --read-name-prefix=${sample_id} \
    --read-group-id=${sample_id} \
    --error-rate-pre-umi=45 \
@@ -185,7 +170,7 @@ process bwa {
    """
  }
 
- process fgbio_filterconsensus{
+process fgbio_filterconsensus{
   //  --reverse-per-base-tags
 
    label "fgbio"
@@ -193,24 +178,23 @@ process bwa {
    tag "${sample_id}"
 
    input: 
-    path ref_fasta
-    path ref_fasta_dict
-    tuple sample_id, path(bam) from consensus_bam_ch
+     file(reference_fasta) from reference_fasta
+     file("*") from filter_con_ref_index.collect()
+     tuple val(sample_id), file(bam) from consensus_bam_ch
 
    output:
-    tuple sample_id, "${sample_id}.filtered_consensus.bam" into (filter_consensus_bam_ch, consensus_fastq_ch,temp_qc_filter_bam)
+     tuple val(sample_id), file('*.filtered_consensus.bam') into (filter_consensus_bam_ch, consensus_fastq_ch, qc_filtered_consensus_bam)
 
    memory "32G"
-  
    publishDir params.output, overwrite: true
 
    script:
    """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/fgbio-1.1.0.jar \
+   fgbio -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./\
    FilterConsensusReads \
    --input=${bam} \
    --output=${sample_id}.filtered_consensus.bam \
-   --ref=${ref_fasta} \
+   --ref=${reference_fasta} \
    --min-reads=2 \
    --max-read-error-rate 0.05 \
    --min-base-quality 10 \
@@ -219,7 +203,7 @@ process bwa {
    """
  }
 
- process sort_filter_bam {
+process sort_filter_bam {
    // Sort alignment by query name
    label "picard"
 
@@ -238,7 +222,7 @@ process bwa {
 
    script:
    """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    SortSam \
    I=${bam} \
    O=${sample_id}.sorted_consensus.bam \
@@ -246,10 +230,8 @@ process bwa {
    """
  }
 
- process bam_to_fastqs {
-  // Create interleaved fastq 
-   label "picard"
-
+process bam_to_fastqs {
+   label 'picard'
    tag "${sample_id}"
 
    input:
@@ -262,7 +244,7 @@ process bwa {
 
    script:
    """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    SamToFastq \
    I=${bam} \
    FASTQ=${sample_id}.fastq \
@@ -280,12 +262,14 @@ process bwa {
    tag "${sample_id}"
 
    input:
-    path ref_fasta
-    path bwa_index
-    tuple sample_id, path(fastq) from consensus_fastq
-    
+     tuple val(sample_id), file(fastq) from consensus_fastq
+     file(reference_fasta) from reference_fasta
+     file("*") from bwa_realign_ref_index.collect()
+
    output:
-    tuple sample_id, "${sample_id}.realign.sam" into realign_ch
+    tuple sample_id, "${sample_id}.realigned.bam" into realign_ch
+    tuple val(sample_id), val("realigned"), file('*realigned.bam'), file('*.bai') into qc_sorted_final_bam
+
   
    cpus 8 
 
@@ -297,19 +281,20 @@ process bwa {
    -p \
    -Y \
    -t ${task.cpus} \
-   ${ref_fasta} \
-   ${fastq} > ${sample_id}.realign.sam
+   ${reference_fasta} ${fastq} 2> log.txt \
+   | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.realigned.bam
+   
+   samtools index ${sample_id}.realigned.bam
    """
  }
 
- process sort_realign_sam {
-  //  Sort alignment by query name
-   label "picard"
-
+ process sort_realign_bam {
+   //  Sort alignment by query name
+   label 'picard'
    tag "${sample_id}"
 
    input: 
-    tuple sample_id, path(sam) from realign_ch
+    tuple sample_id, path(bam) from realign_ch
 
    output:
     tuple sample_id, "${sample_id}.sorted.bam" into (sorted_realign_consensus_ch, temp_qc_realign_bam)
@@ -318,9 +303,9 @@ process bwa {
   
    script:
    """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    SortSam \
-   I=${sam} \
+   I=${bam} \
    O=${sample_id}.sorted.bam \
    SORT_ORDER=queryname
    """
@@ -329,51 +314,71 @@ process bwa {
  merge_ch = sorted_realign_consensus_ch.join(sorted_consensus_ch, remainder: true)
  process final_bam {
   //Merge consensus bam (unaligned) with aligned bam
-   label "picard"
-   
+   label 'picard'
    tag "${sample_id}"
 
    input:
-    path ref_fasta
-    path ref_fasta_dict
     tuple sample_id, path(sorted_bam), path(sorted_filtered_bam) from merge_ch
+    file(reference_fasta) from reference_fasta
+    file("*") from picard_ref_index.collect()
         
+  // output:
+  //  tuple sample_id, "${sample_id}*.final.bam" into (qc_final_bam, final_bam_ch)
+
+
+ //input:
+   //  tuple val(sample_id), file(consensus_bam) from sorted_filter_consensus_ch
+     // tuple val(sample_id), file(sorted_bam) from sorted_realign_consensus_ch 
+     
+    
    output:
-    tuple sample_id, "${sample_id}*.final.bam" into (qc_final_bam, final_bam_ch)
+     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into qc_final_bam
+     file("*.bai")
   
    publishDir params.output, overwrite: true
    memory "32G"
 
    script:
    """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    MergeBamAlignment \
    UNMAPPED=${sorted_filtered_bam} \
    ALIGNED=${sorted_bam} \
    O=${sample_id}.final.bam \
-   R=${ref_fasta} \
+   R=${reference_fasta} \
    CREATE_INDEX=true \
    VALIDATION_STRINGENCY=SILENT \
    SORT_ORDER=coordinate
    """
  }
- 
-  process hs_metrics {
-  // hybrid-selection (HS) metrics
-   label "picard"
 
+
+
+// ######### QC ######### //
+
+// Combine channels for quality here
+// into a single quality_ch for processing below.
+
+//qc_consensus_bam,
+//qc_filtered_consensus_bam
+
+qc_sorted_final_bam.mix(qc_standard_bam)
+            .into{ hs_metrics_ch; mosdepth_qc_ch } 
+
+
+process quality_metrics {
+   label 'picard'
    tag "${sample_id}"
 
    input:
-    path ref_fasta
-    path ref_fasta_fai
-    path bwa_index
-    
-    path picard_intervals
-    tuple sample_id, path(bam) from qc_final_bam
+     file(picard_intervals) from picard_intervals
+     tuple val(sample_id), val(bam_type), file(bam), file(bai) from hs_metrics_ch
+     file(reference_fasta) from reference_fasta
+     file("*") from qc_ref_index.collect()
 
    output:
-    tuple sample_id, "${sample_id}.final_hs_metrics" into qc_metrics
+     path('*.hs_metrics') into hs_metrics_out_ch
+    // path('*.insert_size_metrics') into insert_size_metrics_ch
   
    publishDir params.output, overwrite: true
    
@@ -381,325 +386,101 @@ process bwa {
 
    script:
    """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    CollectHsMetrics \
    BAIT_SET_NAME=${picard_intervals} \
    BAIT_INTERVALS=${picard_intervals} \
    TARGET_INTERVALS=${picard_intervals} \
-   REFERENCE_SEQUENCE=${ref_fasta} \
+   REFERENCE_SEQUENCE=${reference_fasta} \
    INPUT=${bam} \
-   OUTPUT=${sample_id}.final_hs_metrics
-  """
-  }
+   OUTPUT=${sample_id}.${bam_type}.hs_metrics
 
-process initial_hs_metrics {
-  // hybrid-selection (HS) metrics
-   label "picard"
-
-   tag "${sample_id}"
-
-   input:
-    path ref_fasta
-    path ref_fasta_fai
-    path bwa_index
-    
-    path picard_intervals
-    tuple sample_id, path(bam) from temp_qc_initial_bam
-
-   output:
-    tuple sample_id, "${sample_id}.initial_hs_metrics" 
-  
-   publishDir params.output, overwrite: true
-   
-   memory "32G"
-
-   script:
-   """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
-   CollectHsMetrics \
-   BAIT_SET_NAME=${picard_intervals} \
-   BAIT_INTERVALS=${picard_intervals} \
-   TARGET_INTERVALS=${picard_intervals} \
-   REFERENCE_SEQUENCE=${ref_fasta} \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.initial_hs_metrics
-  """
-  }
-  
-  process mate_hs_metrics {
-  // hybrid-selection (HS) metrics
-   label "picard"
-
-   tag "${sample_id}"
-
-   input:
-    path ref_fasta
-    path ref_fasta_fai
-    path bwa_index
-    
-    path picard_intervals
-    tuple sample_id, path(bam) from temp_qc_mate_bam
-
-   output:
-    tuple sample_id, "${sample_id}.mate_hs_metrics" 
-  
-   publishDir params.output, overwrite: true
-   
-   memory "32G"
-
-   script:
-   """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
-   CollectHsMetrics \
-   BAIT_SET_NAME=${picard_intervals} \
-   BAIT_INTERVALS=${picard_intervals} \
-   TARGET_INTERVALS=${picard_intervals} \
-   REFERENCE_SEQUENCE=${ref_fasta} \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.mate_hs_metrics
-  """
-  }
-  
-  process grp_umi_hs_metrics {
-  // hybrid-selection (HS) metrics
-   label "picard"
-
-   tag "${sample_id}"
-
-   input:
-    path ref_fasta
-    path ref_fasta_fai
-    path bwa_index
-    
-    path picard_intervals
-    tuple sample_id, path(bam) from temp_qc_grp_umi_bam
-
-   output:
-    tuple sample_id, "${sample_id}.grp_umi_hs_metrics" 
-  
-   publishDir params.output, overwrite: true
-   
-   memory "32G"
-
-   script:
-   """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
-   CollectHsMetrics \
-   BAIT_SET_NAME=${picard_intervals} \
-   BAIT_INTERVALS=${picard_intervals} \
-   TARGET_INTERVALS=${picard_intervals} \
-   REFERENCE_SEQUENCE=${ref_fasta} \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.grp_umi_hs_metrics
-  """
-  }
-  
-  process realign_hs_metrics {
-  // hybrid-selection (HS) metrics
-   label "picard"
-
-   tag "${sample_id}"
-
-   input:
-    path ref_fasta
-    path ref_fasta_fai
-    path bwa_index
-    
-    path picard_intervals
-    tuple sample_id, path(bam) from temp_qc_realign_bam
-
-   output:
-    tuple sample_id, "${sample_id}.realign_hs_metrics" 
-  
-   publishDir params.output, overwrite: true
-   
-   memory "32G"
-
-   script:
-   """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
-   CollectHsMetrics \
-   BAIT_SET_NAME=${picard_intervals} \
-   BAIT_INTERVALS=${picard_intervals} \
-   TARGET_INTERVALS=${picard_intervals} \
-   REFERENCE_SEQUENCE=${ref_fasta} \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.realign_hs_metrics
-  """
-  }
-
-  /*
-
-  process filtered_hs_metrics {
-  // hybrid-selection (HS) metrics
-   label "picard"
-
-   tag "${sample_id}"
-
-   input:
-    path ref_fasta
-    path ref_fasta_fai
-    path bwa_index
-    path ref_fasta_dict
-    path picard_intervals
-    tuple sample_id, path(bam) from temp_qc_filter_bam
-
-   output:
-    tuple sample_id, "${sample_id}.filtered_hs_metrics" 
-  
-   publishDir params.output, overwrite: true
-   
-   memory "32G"
-
-   script:
-   """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
-   CollectHsMetrics \
-   BAIT_SET_NAME=${picard_intervals} \
-   BAIT_INTERVALS=${picard_intervals} \
-   TARGET_INTERVALS=${picard_intervals} \
-   REFERENCE_SEQUENCE=${ref_fasta} \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.filtered_hs_metrics
-  """
-  }
-  /*
- These fail with "Sequence dictionaries are not the same size (0, 84)"
-  process consensus_hs_metrics {
-  // hybrid-selection (HS) metrics
-   label "picard"
-
-   tag "${sample_id}"
-
-   input:
-    path ref_fasta
-    path ref_fasta_fai
-    path bwa_index
-    
-    path picard_intervals
-    tuple sample_id, path(bam) from temp_qc_consensus_bam
-
-   output:
-    tuple sample_id, "${sample_id}.consensus_hs_metrics"
-   publishDir params.output, overwrite: true
-   
-   memory "32G"
-
-   script:
-   """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
-   CollectHsMetrics \
-   BAIT_SET_NAME=${picard_intervals} \
-   BAIT_INTERVALS=${picard_intervals} \
-   TARGET_INTERVALS=${picard_intervals} \
-   REFERENCE_SEQUENCE=${ref_fasta} \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.consensus_hs_metrics
-  """
-  }
-  process sorted_filtered_hs_metrics {
-  // hybrid-selection (HS) metrics
-   label "picard"
-
-   tag "${sample_id}"
-
-   input:
-    path ref_fasta
-    path ref_fasta_fai
-    path bwa_index
-    
-    path picard_intervals
-    tuple sample_id, path(bam) from temp_qc_sorted_filter_bam
-
-   output:
-    tuple sample_id, "${sample_id}.sorted_filtered_hs_metrics" 
-  
-   publishDir params.output, overwrite: true
-   
-   memory "32G"
-
-   script:
-   """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
-   CollectHsMetrics \
-   BAIT_SET_NAME=${picard_intervals} \
-   BAIT_INTERVALS=${picard_intervals} \
-   TARGET_INTERVALS=${picard_intervals} \
-   REFERENCE_SEQUENCE=${ref_fasta} \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.sorted_filtered_hs_metrics
-  """
-  }
-  */
-  
+"""
+}
 /*
-  process mark_duplicates {
-
-   label "picard"
-
-   tag "${sample_id}"
-
-   input:
-    tuple sample_id, path(bam) from dup_final_bam_ch
-
-   output:
-    tuple sample_id, "${sample_id}.final_dup_metrics" into dup_metrics
-    tuple sample_id, path("${sample_id}.final_rmdup.bam") into rmdup_bam
-  
-   publishDir params.output, overwrite: true
-   
-   memory "32G"
-
-   script:
-   """
-   java -Xmx${task.memory.toGiga()}g -jar /opt/picard.jar \
-   MarkDuplicates \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+   CollectInsertSizeMetrics \
+   INCLUDE_DUPLICATES=true \
    INPUT=${bam} \
-   OUTPUT=${sample_id}.final_rmdup.bam \
-   METRICS_FILE=${sample_id}.final_dup_metrics \
-   VALIDATION_STRINGENCY=SILENT \
-   CREATE_INDEX=true 
+   OUTPUT=${sample_id}.${bam_type}.insert_size_metrics \
+   HISTOGRAM_FILE=${sample_id}.${bam_type}.insert_size_histogram.pdf
+   """
+}
+*/
+
+process fastqc {
+  label 'fastqc'
+  tag "${sample_id}"
+  container 'quay.io/biocontainers/fastqc:0.11.8--1'
+  tag "${sample_id}"
+  cpus 2
+  memory '8 GB'
+
+  publishDir params.output, pattern: "*.html", mode: "copy", overwrite: true
+
+  input:
+    tuple sample_id, file(fastq1), file(fastq2) from fastqc_ch
+  output:
+    path "fastqc/*", type:"dir" into fastqc_report_ch
+
+  script:
+  fastqc_path = "fastqc/${sample_id}/"
   """
-  }
- 
-
- /* process vardict {
-   
-  // -C  #Indicate the chromosome names are just numbers, such as 1, 2, not chr1, chr2
-  //  -F 0  #The hexical to filter reads using samtools. Default: 0x500 (filter 2nd alignments and duplicates).  Use -F 0 to turn it off
-  //  -f 0.000000000001   #The threshold for allele frequency, default: 0.05 or 5%
-  //  -N ${specimen}  #The sample name to be used directly
-  //  -b ${SOURCES[0]} 
-  //  -c 1  #The column for chromosome
-  //  -S 2  #The column for the region start, e.g. gene start
-  //  -E 3  #The column for the region end, e.g. gene end
-  // -g 4  #The column for gene name, or segment annotation
-  //  -r 1  #The minimum # of variant reads, default 2
-  // -q 10  #The phred score for a base to be considered a good call.  Default: 25 (for Illumina), tuple to 10 to match
-  
-   label "vardict"
-
+  mkdir -p ${fastqc_path}
+  zcat ${fastq1} ${fastq2} | fastqc --quiet -o ${fastqc_path} stdin:${sample_id}
+  """
+}
+/*
+process mosdepth {
+   label 'mosdepth_qc'
    tag "${sample_id}"
+   container "quay.io/biocontainers/mosdepth:0.2.9--hbeb723e_0"
+   memory '4 GB'
+   cpus 4 // per docs, no benefit after 4 threads
  
    input:
-    tuple sample_id, path(bam) from vardict_final_bam_ch
-    path bed_file
-    path ref_fasta
-    path ref_fasta_dict
-
+      file(bed) from bed_file
+      tuple val(sample_id), val(bam_type), file(bam), file(bai) from mosdepth_qc_ch
    output:
-    tuple sample_id, path("*.vardict.vcf") into vardict_vcf_ch
+      file "${sample_id}.${bam_type}.regions.bed.gz"
+      file "${sample_id}.${bam_type}.mosdepth.region.dist.txt" into mosdepth_out_ch
 
-   publishDir params.output, overwrite: true
-
-   memory "32G"
-
-   cpus 8
+   publishDir params.output
 
    script:
    """
+ 
+   mosdepth -t ${task.cpus} --by ${bed} --no-per-base --fast-mode ${sample_id}.${bam_type} ${bam}
+   """
+}
+
+*/
+process multiqc {
+  label 'multiqc'
+  tag "${sample_id}"
+  container 'quay.io/biocontainers/multiqc:1.8--py_2'
+  memory '4 GB'
+  cpus 4
+  input:
+     path('*') from fastqc_report_ch.flatMap().collect()
+     path('*') from hs_metrics_out_ch.flatMap().collect()
+    // path('*') from insert_size_metrics_ch.flatMap().collect()
+     path('*') from histogram_ch.flatMap().collect()
+     //path("*") from mosdepth_out_ch.flatMap().collect()
+
+  output:
+     file "multiqc_report.${params.run_id}.html"
+  publishDir params.output, saveAs: {f -> "multiqc/${f}"}, mode: "copy", overwrite: true
+  script:
+  """
+  multiqc -v -d --filename "multiqc_report.${params.run_id}.html" .
+  """
+}
+
+
+/*
    VarDict \
-   -G ${ref_fasta} \
+   -G ${reference_fasta} \
    -C  \
    -F 0 \
    -f 0.000000000001 \
@@ -737,4 +518,3 @@ process initial_hs_metrics {
 
 
 //   */
- 
