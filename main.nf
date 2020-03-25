@@ -360,7 +360,7 @@ process quality_metrics {
 
    output:
      path("${sample_id}.${bam_type}.hs_metrics") into hs_metrics_out_ch
-    // path("${sample_id}.${bam_type}.insert_size_metrics") into insert_size_metrics_ch
+     path("${sample_id}.${bam_type}.insert_size_metrics") into insert_size_metrics_ch
 
    publishDir params.output, overwrite: true
    
@@ -378,15 +378,14 @@ process quality_metrics {
    INPUT=${bam} \
    OUTPUT=${sample_id}.${bam_type}.hs_metrics 
 
-   """
-}
-/*   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    CollectInsertSizeMetrics \
    INCLUDE_DUPLICATES=true \
    INPUT=${bam} \
    OUTPUT=${sample_id}.${bam_type}.insert_size_metrics \
-   HISTOGRAM_FILE=${sample_id}.${bam_type}.insert_size_histogram.pdf */
-
+   HISTOGRAM_FILE=${sample_id}.${bam_type}.insert_size_histogram.pdf
+   """
+}
 
 process fastqc {
   label 'fastqc'
@@ -411,7 +410,7 @@ process fastqc {
   zcat ${fastq1} ${fastq2} | fastqc --quiet -o ${fastqc_path} stdin:${sample_id}
   """
 }
-/*
+
 process mosdepth {
    label 'mosdepth'
    tag "${sample_id}"
@@ -435,7 +434,7 @@ process mosdepth {
    """
 }
 
-*/
+
 process multiqc {
   label 'multiqc'
   tag "${sample_id}"
@@ -443,9 +442,9 @@ process multiqc {
   input:
      path('*') from fastqc_report_ch.flatMap().collect()
      path('*') from hs_metrics_out_ch.flatMap().collect()
-    // path('*') from insert_size_metrics_ch.flatMap().collect()
+     path('*') from insert_size_metrics_ch.flatMap().collect()
      path('*') from histogram_ch.flatMap().collect()
-     //path("*") from mosdepth_out_ch.flatMap().collect()
+     path("*") from mosdepth_out_ch.flatMap().collect()
 
   output:
      file "multiqc_report.${params.run_id}.html"
