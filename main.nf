@@ -24,6 +24,7 @@ process bwa {
    // Align fastqs
    label 'bwa'
    tag "${sample_id}"
+
    input:
      file(reference_fasta) from reference_fasta
      file("*") from bwa_ref_index.collect()
@@ -33,8 +34,9 @@ process bwa {
      tuple val(sample_id), file('*.bam') into align_ch
      tuple val(sample_id), val("standard"), file('*.standard.bam'), file('*.bai') into qc_standard_bam
 
- 
    publishDir params.output, overwrite: true
+
+   cpus 8
    
    script:
    // bwa mem options:
@@ -83,7 +85,6 @@ process fgbio_setmateinformation{
   // ensures all mate-related flag fields are tuple correctly, 
   // and that the mate reference and mate start position are correct.
    label "fgbio"
-
    tag "${sample_id}"
 
    input: 
@@ -93,8 +94,8 @@ process fgbio_setmateinformation{
     tuple sample_id, "${sample_id}.mateinfo.bam" into mate_info_bam_ch
     tuple val(sample_id), val("set_mate"), file('*.bam') into temp_qc_mate_bam
 
-
    memory "32G"
+
    publishDir params.output, overwrite: true
 
    script:
@@ -109,7 +110,6 @@ process fgbio_setmateinformation{
 process fgbio_group_umi {
    // Groups reads together that appear to have come from the same original molecule.
    label "fgbio"
-
    tag "${sample_id}"
 
    input: 
@@ -120,6 +120,7 @@ process fgbio_group_umi {
      file('*.grpumi.histogram') into histogram_ch
 
    memory "32G"
+
    publishDir params.output, overwrite: true
 
    script:
@@ -140,7 +141,6 @@ process fgbio_callconsensus{
    //   3. consensus raw base quality is modified by incorporating the probability of an error prior to
    //   calls each end of a pair independently, and does not jointly call bases that overlap within a pair. Insertion or deletion
    //   errors in the reads are not considered in the consensus model.integrating the unique molecular tags
-   
    label 'fgbio'
    tag "${sample_id}"
 
@@ -151,6 +151,7 @@ process fgbio_callconsensus{
      tuple val(sample_id), file('*.consensus.bam') into (consensus_bam_ch, qc_consensus_bam)
   
    memory "32G"
+
    publishDir params.output, overwrite: true
 
    script:
@@ -171,10 +172,7 @@ process fgbio_callconsensus{
  }
 
 process fgbio_filterconsensus{
-  //  --reverse-per-base-tags
-
    label "fgbio"
-
    tag "${sample_id}"
 
    input: 
@@ -186,6 +184,7 @@ process fgbio_filterconsensus{
      tuple val(sample_id), file('*.filtered_consensus.bam') into (filter_consensus_bam_ch, consensus_fastq_ch, qc_filtered_consensus_bam)
 
    memory "32G"
+
    publishDir params.output, overwrite: true
 
    script:
@@ -206,7 +205,6 @@ process fgbio_filterconsensus{
 process sort_filter_bam {
    // Sort alignment by query name
    label "picard"
-
    tag "${sample_id}"
 
    input: 
@@ -235,8 +233,8 @@ process bam_to_fastqs {
    tag "${sample_id}"
 
    input:
-    //tuple sample_id, path(bam) from consensus_fastq_ch
     tuple sample_id, path(bam) from sorted_consensus_fastq_ch
+
    output:
     tuple sample_id, "${sample_id}.fastq" into consensus_fastq
   
@@ -256,21 +254,18 @@ process bam_to_fastqs {
    //-p Assume the first input query file is interleaved paired-end FASTA/Q.
    //-Y use soft clipping for supplementary alignment
    //-K process INT input bases in each batch regardless of nThreads (for reproducibility)
-   
    label "bwa"
-
    tag "${sample_id}"
 
    input:
-     tuple val(sample_id), file(fastq) from consensus_fastq
      file(reference_fasta) from reference_fasta
      file("*") from bwa_realign_ref_index.collect()
+     tuple val(sample_id), file(fastq) from consensus_fastq
 
    output:
     tuple sample_id, "${sample_id}.realigned.bam" into realign_ch
     tuple val(sample_id), val("realigned"), file('*realigned.bam'), file('*.bai') into qc_sorted_final_bam
 
-  
    cpus 8 
 
    script:
@@ -318,22 +313,12 @@ process bam_to_fastqs {
    tag "${sample_id}"
 
    input:
-    tuple sample_id, path(sorted_bam), path(sorted_filtered_bam) from merge_ch
     file(reference_fasta) from reference_fasta
     file("*") from picard_ref_index.collect()
-        
-  // output:
-  //  tuple sample_id, "${sample_id}*.final.bam" into (qc_final_bam, final_bam_ch)
+    tuple sample_id, path(sorted_bam), path(sorted_filtered_bam) from merge_ch
 
-
- //input:
-   //  tuple val(sample_id), file(consensus_bam) from sorted_filter_consensus_ch
-     // tuple val(sample_id), file(sorted_bam) from sorted_realign_consensus_ch 
-     
-    
    output:
-     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into qc_final_bam
-     file("*.bai")
+     tuple val(sample_id), val("final"), file('*.final.bam') into qc_final_bam
   
    publishDir params.output, overwrite: true
    memory "32G"
@@ -346,13 +331,10 @@ process bam_to_fastqs {
    ALIGNED=${sorted_bam} \
    O=${sample_id}.final.bam \
    R=${reference_fasta} \
-   CREATE_INDEX=true \
    VALIDATION_STRINGENCY=SILENT \
    SORT_ORDER=coordinate
    """
  }
-
-
 
 // ######### QC ######### //
 
@@ -372,20 +354,21 @@ process quality_metrics {
 
    input:
      file(picard_intervals) from picard_intervals
-     tuple val(sample_id), val(bam_type), file(bam), file(bai) from hs_metrics_ch
      file(reference_fasta) from reference_fasta
      file("*") from qc_ref_index.collect()
+     tuple val(sample_id), val(bam_type), file(bam), file(bai) from hs_metrics_ch
 
    output:
-     path('*.hs_metrics') into hs_metrics_out_ch
-    // path('*.insert_size_metrics') into insert_size_metrics_ch
-  
+     path("${sample_id}.${bam_type}.hs_metrics") into hs_metrics_out_ch
+    // path("${sample_id}.${bam_type}.insert_size_metrics") into insert_size_metrics_ch
+
    publishDir params.output, overwrite: true
    
    memory "32G"
 
    script:
    """
+ 
    picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    CollectHsMetrics \
    BAIT_SET_NAME=${picard_intervals} \
@@ -393,35 +376,33 @@ process quality_metrics {
    TARGET_INTERVALS=${picard_intervals} \
    REFERENCE_SEQUENCE=${reference_fasta} \
    INPUT=${bam} \
-   OUTPUT=${sample_id}.${bam_type}.hs_metrics
+   OUTPUT=${sample_id}.${bam_type}.hs_metrics 
 
-"""
+   """
 }
-/*
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+/*   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    CollectInsertSizeMetrics \
    INCLUDE_DUPLICATES=true \
    INPUT=${bam} \
    OUTPUT=${sample_id}.${bam_type}.insert_size_metrics \
-   HISTOGRAM_FILE=${sample_id}.${bam_type}.insert_size_histogram.pdf
-   """
-}
-*/
+   HISTOGRAM_FILE=${sample_id}.${bam_type}.insert_size_histogram.pdf */
+
 
 process fastqc {
   label 'fastqc'
   tag "${sample_id}"
-  container 'quay.io/biocontainers/fastqc:0.11.8--1'
-  tag "${sample_id}"
-  cpus 2
-  memory '8 GB'
-
-  publishDir params.output, pattern: "*.html", mode: "copy", overwrite: true
 
   input:
     tuple sample_id, file(fastq1), file(fastq2) from fastqc_ch
+
   output:
     path "fastqc/*", type:"dir" into fastqc_report_ch
+
+  cpus 2
+
+  memory '8 GB'
+
+  publishDir params.output, pattern: "*.html", mode: "copy", overwrite: true
 
   script:
   fastqc_path = "fastqc/${sample_id}/"
@@ -432,24 +413,24 @@ process fastqc {
 }
 /*
 process mosdepth {
-   label 'mosdepth_qc'
+   label 'mosdepth'
    tag "${sample_id}"
-   container "quay.io/biocontainers/mosdepth:0.2.9--hbeb723e_0"
-   memory '4 GB'
-   cpus 4 // per docs, no benefit after 4 threads
- 
+
    input:
       file(bed) from bed_file
       tuple val(sample_id), val(bam_type), file(bam), file(bai) from mosdepth_qc_ch
    output:
       file "${sample_id}.${bam_type}.regions.bed.gz"
       file "${sample_id}.${bam_type}.mosdepth.region.dist.txt" into mosdepth_out_ch
-
+ 
+   memory '4 GB'
+ 
+   cpus 4 // per docs, no benefit after 4 threads
+ 
    publishDir params.output
 
    script:
    """
- 
    mosdepth -t ${task.cpus} --by ${bed} --no-per-base --fast-mode ${sample_id}.${bam_type} ${bam}
    """
 }
@@ -458,9 +439,7 @@ process mosdepth {
 process multiqc {
   label 'multiqc'
   tag "${sample_id}"
-  container 'quay.io/biocontainers/multiqc:1.8--py_2'
-  memory '4 GB'
-  cpus 4
+ 
   input:
      path('*') from fastqc_report_ch.flatMap().collect()
      path('*') from hs_metrics_out_ch.flatMap().collect()
@@ -470,7 +449,13 @@ process multiqc {
 
   output:
      file "multiqc_report.${params.run_id}.html"
+
+  memory '4 GB'
+
+  cpus 4
+
   publishDir params.output, saveAs: {f -> "multiqc/${f}"}, mode: "copy", overwrite: true
+
   script:
   """
   multiqc -v -d --filename "multiqc_report.${params.run_id}.html" .
@@ -503,18 +488,4 @@ process multiqc {
    """
  }
  
- 
-
-//  process picard_mark_duplicates {
-//       For validation, run mark duplicates on initial mapped_bam and final_bam
-//  }
-
-//   process coverage {
-//      #tools: bedtools 
-//      #files: MeanCoverageBED.txt
-//      base_cov,coverage_metrics=SConscript("bedcov.scons', exports='e assay_items final_bam')
-//      e.Depends([base_cov,coverage_metrics], final_bam)
-//  } 
-
-
-//   */
+*/
