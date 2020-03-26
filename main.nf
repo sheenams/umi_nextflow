@@ -6,7 +6,8 @@ fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', f
                        .into{align_input; fastqc_ch}
 
 // Assay specific files
-picard_intervals = file(params.picard_intervals)
+picard_targets = file(params.picard_targets)
+picard_baits = file(params.picard_biats)
 bed_file = file(params.bed)
 
 // Reference genome is used multiple times
@@ -353,7 +354,8 @@ process quality_metrics {
    tag "${sample_id}"
 
    input:
-     file(picard_intervals) from picard_intervals
+     file(picard_targets) from picard_targets
+     file(picard_baits) from picard_baits
      file(reference_fasta) from reference_fasta
      file("*") from qc_ref_index.collect()
      tuple val(sample_id), val(bam_type), file(bam), file(bai) from hs_metrics_ch
@@ -371,9 +373,8 @@ process quality_metrics {
  
    picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    CollectHsMetrics \
-   BAIT_SET_NAME=${picard_intervals} \
-   BAIT_INTERVALS=${picard_intervals} \
-   TARGET_INTERVALS=${picard_intervals} \
+   TARGET_INTERVALS=${picard_targets} \
+   BAIT_INTERVALS=${picard_baits} \
    REFERENCE_SEQUENCE=${reference_fasta} \
    INPUT=${bam} \
    OUTPUT=${sample_id}.${bam_type}.hs_metrics 
