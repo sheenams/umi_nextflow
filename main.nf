@@ -438,8 +438,7 @@ process mosdepth {
 
 process multiqc {
   label 'multiqc'
-  tag "${sample_id}"
- 
+
   input:
      path('*') from fastqc_report_ch.flatMap().collect()
      path('*') from hs_metrics_out_ch.flatMap().collect()
@@ -448,16 +447,18 @@ process multiqc {
      path("*") from mosdepth_out_ch.flatMap().collect()
 
   output:
-     file "multiqc_report.${params.run_id}.html"
+     file "multiqc_report.${params.run_id}/multiqc_data.json" into custom_report_gen_ch
+     file qc_summary.${params.run_id}.mqc.tsv
 
   memory '4 GB'
-
   cpus 4
 
   publishDir params.output, saveAs: {f -> "multiqc/${f}"}, mode: "copy", overwrite: true
 
   script:
   """
+  multiqc -v -d --filename "multiqc_report_pre.${params.run_id}.html" .
+  python preprocess_qc.py picard multiqc_report_pre.${params.run_id}/multiqc_data.json qc_summary.${params.run_id}.mqc.tsv
   multiqc -v -d --filename "multiqc_report.${params.run_id}.html" .
   """
 }
