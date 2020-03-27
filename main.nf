@@ -447,7 +447,7 @@ process multiqc {
      path("*") from mosdepth_out_ch.flatMap().collect()
 
   output:
-     file "multiqc_report.${params.run_id}/multiqc_data.json" into custom_report_gen_ch
+     file "multiqc_report.${params.run_id}/multiqc_data.json"
      file qc_summary.${params.run_id}.mqc.tsv
 
   memory '4 GB'
