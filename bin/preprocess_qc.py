@@ -9,15 +9,17 @@ import json
 import argparse 
 import pandas as pd
 
-picard_fields = ["TOTAL_READS", "PCT_SELECTED_BASES", 
-                 "MEAN_TARGET_COVERAGE", "PCT_USABLE_BASES_ON_TARGET", "PCT_TARGET_BASES_100X"]
+picard_fields = ["TOTAL_READS", "MEAN_TARGET_COVERAGE", 
+                 "PCT_USABLE_BASES_ON_TARGET", "PCT_OFF_BAIT", "PCT_TARGET_BASES_100X",
+                 "PCT_SELECTED_BASES"]
 
 picard_format = {
     'TOTAL_READS': "{:.0f}",
     'MEAN_TARGET_COVERAGE': "{:.0f}",
     'PCT_USABLE_BASES_ON_TARGET': "{:.1%}",
     'PCT_TARGET_BASES_100X': "{:.1%}",
-    'PCT_SELECTED_BASES': "{:.1%}"
+    'PCT_SELECTED_BASES': "{:.1%}",
+    'PCT_OFF_BAIT': "{:.1%}",
 }
 
 HEADER = """# plot_type: 'table'
