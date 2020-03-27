@@ -448,7 +448,7 @@ process multiqc {
 
   output:
      file "multiqc_report.${params.run_id}/multiqc_data.json"
-     file qc_summary.${params.run_id}.mqc.tsv
+     file "qc_summary.${params.run_id}.mqc.tsv"
 
   memory '4 GB'
   cpus 4
