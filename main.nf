@@ -7,7 +7,7 @@ fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', f
 
 // Assay specific files
 picard_targets = file(params.picard_targets)
-picard_baits = file(params.picard_biats)
+picard_baits = file(params.picard_baits)
 bed_file = file(params.bed)
 
 // Reference genome is used multiple times
