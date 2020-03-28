@@ -448,8 +448,8 @@ process multiqc {
      path("*") from mosdepth_out_ch.flatMap().collect()
 
   output:
-     file "multiqc_report.${params.run_id}/multiqc_data.json"
-     file "qc_summary.${params.run_id}.mqc.tsv"
+     file "multiqc_report.${params.run_id}_data/multiqc_data.json"
+     file "qc_summary.${params.run_id}_mqc.csv"
 
   memory '4 GB'
   cpus 4
@@ -458,9 +458,10 @@ process multiqc {
 
   script:
   """
-  multiqc -v -d --filename "multiqc_report_pre.${params.run_id}.html" .
-  python preprocess_qc.py picard multiqc_report_pre.${params.run_id}/multiqc_data.json qc_summary.${params.run_id}.mqc.tsv
-  multiqc -v -d --filename "multiqc_report.${params.run_id}.html" .
+  multiqc -d --filename "multiqc_report_pre.${params.run_id}.html" .
+  preprocess_qc.py picard multiqc_report_pre.${params.run_id}_data/multiqc_data.json qc_summary.${params.run_id}_mqc.csv
+  rm -rf multiqc_report_pre.${params.run_id}_data
+  multiqc -d --filename "multiqc_report.${params.run_id}.html" .
   """
 }
 

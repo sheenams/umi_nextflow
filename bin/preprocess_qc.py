@@ -38,7 +38,7 @@ def parse_picard(args):
 
     args.output.write(HEADER + "\n")
     cols = ["bam_type"] + picard_fields
-    df[cols].to_csv(args.output, sep="\t")
+    df[cols].to_csv(args.output, sep=",")
 
 if __name__ == '__main__':
 
