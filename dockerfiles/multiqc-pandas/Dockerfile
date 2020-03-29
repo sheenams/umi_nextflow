@@ -1,5 +1,5 @@
 # Teeny-tiny matplotlib image based on alpine
-FROM ewels/multiqc:latest
+FROM ewels/multiqc:dev
 
 RUN apk add --no-cache --update \
     python3 python3-dev gcc \
@@ -13,5 +13,4 @@ RUN pip install --upgrade pip
 
 RUN pip install pandas
 
-ENTRYPOINT [ "multiqc" ]
-CMD [ "." ]
+ENTRYPOINT [ "/bin/bash" ]
