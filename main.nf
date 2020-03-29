@@ -448,6 +448,7 @@ process multiqc {
      path("*") from mosdepth_out_ch.flatMap().collect()
 
   output:
+     file "multiqc_report.${params.run_id}.html"
      file "multiqc_report.${params.run_id}_data/multiqc_data.json"
      file "qc_summary.${params.run_id}_mqc.csv"
 
@@ -461,7 +462,7 @@ process multiqc {
   multiqc -d --filename "multiqc_report_pre.${params.run_id}.html" .
   preprocess_qc.py picard multiqc_report_pre.${params.run_id}_data/multiqc_data.json qc_summary.${params.run_id}_mqc.csv
   rm -rf multiqc_report_pre.${params.run_id}_data
-  multiqc -d --filename "multiqc_report.${params.run_id}.html" .
+  multiqc -d -e general_stats --filename "multiqc_report.${params.run_id}.html" .
   """
 }
 
