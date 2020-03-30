@@ -5,6 +5,9 @@ fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', f
                        .view()
                        .into{align_input; fastqc_ch}
 
+// initialize optional downsample_reads to null
+params.downsample_reads = null
+
 // Assay specific files
 picard_targets = file(params.picard_targets)
 picard_baits = file(params.picard_baits)
@@ -42,18 +45,38 @@ process bwa {
    script:
    // bwa mem options:
    // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?
-   """
-   bwa mem \
-     -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
-     -K 10000000 \
-     -C \
-     -Y \
-     -t${task.cpus}  \
-     ${reference_fasta} ${fastq1} ${fastq2} 2> log.txt \
-   | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.standard.bam
-   
-   samtools index ${sample_id}.standard.bam
-   """
+   // sample options (note `sample` is from https://github.com/alexpreynolds/sample)
+   //   -k number of offets (read pairs), 
+   //   -d seed
+   //   -l take 8 lines per offset (for interleaved FASTQ)
+   if ("downsample_reads" in params)
+     """
+     seqtk mergepe ${fastq1} ${fastq2} \
+     | sample -k ${params.downsample_reads} -d 10000000 -l 8 \
+     | bwa mem \
+       -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
+       -K 10000000 \
+       -C \
+       -Y \
+       -t${task.cpus}  \
+       ${reference_fasta} ${fastq1} ${fastq2} 2> log.txt \
+     | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.standard.bam
+     
+     samtools index ${sample_id}.standard.bam
+     """
+   else
+     """
+     bwa mem \
+       -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
+       -K 10000000 \
+       -C \
+       -Y \
+       -t${task.cpus}  \
+       ${reference_fasta} ${fastq1} ${fastq2} 2> log.txt \
+     | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.standard.bam
+     
+     samtools index ${sample_id}.standard.bam
+     """
 } 
 
 process sort_bam {
