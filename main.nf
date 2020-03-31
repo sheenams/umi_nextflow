@@ -332,6 +332,7 @@ process bam_to_fastqs {
  }
 
  merge_ch = sorted_realign_consensus_ch.join(sorted_consensus_ch, remainder: true)
+
  process final_bam {
   //Merge consensus bam (unaligned) with aligned bam
    label 'picard'
@@ -344,7 +345,8 @@ process bam_to_fastqs {
 
    output:
      tuple val(sample_id), val("final"), file('*.final.bam') into qc_final_bam
-  
+     file('*.bai')
+
    publishDir params.output, overwrite: true
    memory "32G"
 
@@ -358,6 +360,7 @@ process bam_to_fastqs {
    R=${reference_fasta} \
    VALIDATION_STRINGENCY=SILENT \
    SORT_ORDER=coordinate
+   CREATE_INDEX=true
    """
  }
 
