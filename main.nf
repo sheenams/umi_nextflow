@@ -362,7 +362,7 @@ process bam_to_fastqs {
    O=${sample_id}.final.bam \
    R=${reference_fasta} \
    VALIDATION_STRINGENCY=SILENT \
-   SORT_ORDER=coordinate
+   SORT_ORDER=coordinate \
    CREATE_INDEX=true
    """
  }
