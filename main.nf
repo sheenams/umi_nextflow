@@ -173,7 +173,7 @@ process fgbio_callconsensus{
     tuple sample_id, path(bam) from grp_umi_bam_ch
 
    output:
-     tuple val(sample_id), file('*.consensus.bam') into (consensus_bam_ch, qc_consensus_bam)
+     tuple val(sample_id), file('*.consensus.bam') into consensus_bam_ch
   
    memory "32G"
 
@@ -206,7 +206,7 @@ process fgbio_filterconsensus{
      tuple val(sample_id), file(bam) from consensus_bam_ch
 
    output:
-     tuple val(sample_id), file('*.filtered_consensus.bam') into (filter_consensus_bam_ch, consensus_fastq_ch, qc_filtered_consensus_bam)
+     tuple val(sample_id), file('*.filtered_consensus.bam') into filter_consensus_bam_ch
 
    memory "32G"
 
@@ -236,8 +236,7 @@ process sort_filter_bam {
     tuple sample_id, path(bam) from filter_consensus_bam_ch
 
    output:
-    //tuple sample_id, "${sample_id}.sorted_filtered.bam" into sorted_filter_consensus_ch 
-    tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_fastq_ch,temp_qc_sorted_filter_bam) 
+    tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_fastq_ch) 
   
    publishDir params.output, overwrite: true
    
@@ -317,7 +316,7 @@ process bam_to_fastqs {
     tuple sample_id, path(bam) from realign_ch
 
    output:
-    tuple sample_id, "${sample_id}.sorted.bam" into (sorted_realign_consensus_ch, temp_qc_realign_bam)
+    tuple sample_id, "${sample_id}.sorted.bam" into sorted_realign_consensus_ch
   
    memory "32G"
   
@@ -372,7 +371,7 @@ process bam_to_fastqs {
 //qc_consensus_bam,
 //qc_filtered_consensus_bam
 
-qc_sorted_final_bam.mix(qc_standard_bam)
+qc_final_bam.mix(qc_standard_bam)
             .into{ hs_metrics_ch; mosdepth_qc_ch } 
 
 
