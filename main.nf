@@ -2,9 +2,11 @@
 
 // Setup the various inputs, defined in nexflow.config
 fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
-                       .filter{ it[0] != "266R01-A01-MONCv1-NA12878" }
                        .view()
                        .into{align_input; fastqc_ch}
+
+// initialize optional downsample_reads to null
+params.downsample_reads = null
 
 // Assay specific files
 picard_targets = file(params.picard_targets)
@@ -42,19 +44,40 @@ process bwa {
    
    script:
    // bwa mem options:
-   // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?
-   """
-   bwa mem \
-     -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
-     -K 10000000 \
-     -C \
-     -Y \
-     -t${task.cpus}  \
-     ${reference_fasta} ${fastq1} ${fastq2} 2> log.txt \
-   | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.standard.bam
-   
-   samtools index ${sample_id}.standard.bam
-   """
+   // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?, -p using paired end input
+   // seqtk sample options:
+   // -s seed
+   if ("downsample_reads" in params)
+     """
+     seqtk mergepe \
+       <(seqtk sample -s 10000000 ${fastq1} ${params.downsample_reads}) \
+       <(seqtk sample -s 10000000 ${fastq2} ${params.downsample_reads}) \
+     | bwa mem \
+       -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
+       -K 10000000 \
+       -C \
+       -Y \
+       -t${task.cpus}  \
+       ${reference_fasta} \
+       -p - \
+       2> log.txt \
+     | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.standard.bam
+     
+     samtools index ${sample_id}.standard.bam
+     """
+   else
+     """
+     bwa mem \
+       -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
+       -K 10000000 \
+       -C \
+       -Y \
+       -t${task.cpus}  \
+       ${reference_fasta} ${fastq1} ${fastq2} 2> log.txt \
+     | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.standard.bam
+     
+     samtools index ${sample_id}.standard.bam
+     """
 } 
 
 process sort_bam {

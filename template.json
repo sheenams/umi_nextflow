@@ -9,6 +9,11 @@
             "default": "280R",
             "title": "Run ID",
             "type": "string"
+        },
+        "downsample_reads": {
+            "default": null,
+            "title": "Downsample FASTQ reads to # of pairs:",
+            "type": "string"
         }
     },
     "required": [
