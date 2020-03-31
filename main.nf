@@ -51,8 +51,9 @@ process bwa {
    //   -l take 8 lines per offset (for interleaved FASTQ)
    if ("downsample_reads" in params)
      """
-     seqtk mergepe ${fastq1} ${fastq2} \
-     | sample -k ${params.downsample_reads} -d 10000000 -l 8 \
+     seqtk mergepe ${fastq1} ${fastq2} > merged.fastq 
+     
+     sample -k ${params.downsample_reads} -d 10000000 -l 8 --preserve-order merged.fastq \
      | bwa mem \
        -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
        -K 10000000 \
