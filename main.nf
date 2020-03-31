@@ -44,22 +44,23 @@ process bwa {
    
    script:
    // bwa mem options:
-   // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?
-   // sample options (note `sample` is from https://github.com/alexpreynolds/sample)
-   //   -k number of offets (read pairs), 
-   //   -d seed
-   //   -l take 8 lines per offset (for interleaved FASTQ)
+   // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?, -p using paired end input
+   // seqtk sample options:
+   // -s seed
    if ("downsample_reads" in params)
      """
-     seqtk mergepe ${fastq1} ${fastq2} \
-     | sample -k ${params.downsample_reads} -d 10000000 -l 8 \
+     seqtk mergepe \
+       <(seqtk sample -s 10000000 ${fastq1} ${params.downsample_reads}) \
+       <(seqtk sample -s 10000000 ${fastq2} ${params.downsample_reads}) \
      | bwa mem \
        -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
        -K 10000000 \
        -C \
        -Y \
        -t${task.cpus}  \
-       ${reference_fasta} ${fastq1} ${fastq2} 2> log.txt \
+       ${reference_fasta} \
+       -p - \
+       2> log.txt \
      | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.standard.bam
      
      samtools index ${sample_id}.standard.bam
