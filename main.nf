@@ -33,7 +33,7 @@ process bwa {
    output:
      tuple val(sample_id), file('*.bam') into align_ch
      tuple val(sample_id), val("standard"), file('*.standard.bam'), file('*.bai') into qc_standard_bam
-
+     //"standar" bam is coordinate sorted for use in QC metrics and IGV
    publishDir params.output, overwrite: true
 
    cpus 8
@@ -65,6 +65,7 @@ process sort_bam {
 
    output:
      tuple val(sample_id), file('*.sorted.bam') into set_mate_ch
+     // sorted bam is queryname sorted, fgbio requirement 
      tuple val(sample_id), val("sorted"), file('*.sorted.bam') into temp_qc_sorted_bam
 
    memory "32GB"
@@ -149,7 +150,7 @@ process fgbio_callconsensus{
 
    output:
      tuple val(sample_id), file('*.consensus.bam') into (consensus_bam_ch, qc_consensus_bam)
-  
+     // consensus bam is queryname sorted, fgbio requirement   
    memory "32G"
 
    publishDir params.output, overwrite: true
@@ -213,7 +214,7 @@ process sort_filter_bam {
    output:
     //tuple sample_id, "${sample_id}.sorted_filtered.bam" into sorted_filter_consensus_ch 
     tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_fastq_ch,temp_qc_sorted_filter_bam) 
-  
+    //sorted_filter_consensus is queryname sorted  
    publishDir params.output, overwrite: true
    
    memory "32G"
@@ -265,7 +266,7 @@ process bam_to_fastqs {
    output:
     tuple sample_id, "${sample_id}.realigned.bam" into realign_ch
     tuple val(sample_id), val("realigned"), file('*realigned.bam'), file('*.bai') into qc_sorted_final_bam
-
+    //"realigned" bam is coordinate sorted, for QC and IGV viewing
    cpus 8 
 
    script:
@@ -293,7 +294,7 @@ process bam_to_fastqs {
 
    output:
     tuple sample_id, "${sample_id}.sorted.bam" into (sorted_realign_consensus_ch, temp_qc_realign_bam)
-  
+    // sorted_realign_consensus_ch is queryname sorted  
    memory "32G"
   
    script:
@@ -308,7 +309,7 @@ process bam_to_fastqs {
 
  merge_ch = sorted_realign_consensus_ch.join(sorted_consensus_ch, remainder: true)
  process final_bam {
-  //Merge consensus bam (unaligned) with aligned bam
+  //Merge consensus bam (unaligned) with aligned bam, which is queryname sorted
    label 'picard'
    tag "${sample_id}"
 
