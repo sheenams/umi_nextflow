@@ -399,6 +399,7 @@ process quality_metrics {
    CollectHsMetrics \
    TARGET_INTERVALS=${picard_targets} \
    BAIT_INTERVALS=${picard_baits} \
+   COVERAGE_CAP=100000 \
    REFERENCE_SEQUENCE=${reference_fasta} \
    INPUT=${bam} \
    OUTPUT=${sample_id}.${bam_type}.hs_metrics 
