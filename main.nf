@@ -347,8 +347,8 @@ process bam_to_fastqs {
     tuple sample_id, path(sorted_bam), path(sorted_filtered_bam) from merge_ch
 
    output:
-     tuple val(sample_id), val("final"), file('*.final.bam') into qc_final_bam
-     file('*.bai')
+     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into qc_final_bam
+     
 
    publishDir params.output, overwrite: true
    memory "32G"
@@ -364,6 +364,8 @@ process bam_to_fastqs {
    VALIDATION_STRINGENCY=SILENT \
    SORT_ORDER=coordinate \
    CREATE_INDEX=true
+
+   mv ${sample_id}.final.bai ${sample_id}.final.bam.bai
    """
  }
 
