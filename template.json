@@ -5,6 +5,11 @@
             "title": "Folder with FASTQs",
             "type": "string"
         },
+        "output": {
+            "default": "s3://uwlm-personal/nkrumm/umi/out/",
+            "title": "Folder for output",
+            "type": "string"
+        },
         "run_id": {
             "default": "280R",
             "title": "Run ID",
