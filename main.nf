@@ -334,13 +334,13 @@ process realign_consensus {
    """
    picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    MergeBamAlignment \
-   UNMAPPED=${sorted_filtered_bam} \
-   ALIGNED=${sorted_bam} \
-   O=${sample_id}.final.bam \
-   R=${reference_fasta} \
-   VALIDATION_STRINGENCY=SILENT \
-   SORT_ORDER=coordinate \
-   CREATE_INDEX=true
+   -UNMAPPED ${sorted_filtered_bam} \
+   -ALIGNED ${sorted_bam} \
+   -O ${sample_id}.final.bam \
+   -R ${reference_fasta} \
+   -VALIDATION_STRINGENCY SILENT \
+   -SORT_ORDER coordinate \
+   -CREATE_INDEX true
 
    mv ${sample_id}.final.bai ${sample_id}.final.bam.bai
    """
@@ -382,19 +382,19 @@ process quality_metrics {
  
    picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    CollectHsMetrics \
-   TARGET_INTERVALS=${picard_targets} \
-   BAIT_INTERVALS=${picard_baits} \
-   COVERAGE_CAP=100000 \
-   REFERENCE_SEQUENCE=${reference_fasta} \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.${bam_type}.hs_metrics 
+   -TARGET_INTERVALS ${picard_targets} \
+   -BAIT_INTERVALS ${picard_baits} \
+   -COVERAGE_CAP 100000 \
+   -REFERENCE_SEQUENCE ${reference_fasta} \
+   -INPUT ${bam} \
+   -OUTPUT ${sample_id}.${bam_type}.hs_metrics 
 
    picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    CollectInsertSizeMetrics \
-   INCLUDE_DUPLICATES=true \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.${bam_type}.insert_size_metrics \
-   HISTOGRAM_FILE=${sample_id}.${bam_type}.insert_size_histogram.pdf
+   -INCLUDE_DUPLICATES true \
+   -INPUT ${bam} \
+   -OUTPUT ${sample_id}.${bam_type}.insert_size_metrics \
+   -HISTOGRAM_FILE ${sample_id}.${bam_type}.insert_size_histogram.pdf
    """
 }
 
