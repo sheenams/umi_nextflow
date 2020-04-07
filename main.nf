@@ -82,7 +82,7 @@ process bwa {
 
 process sort_bam {
    //  Sort alignment by query name
-   label 'picard'
+   label 'sambamba'
    tag "${sample_id}"
 
    input: 
@@ -93,15 +93,14 @@ process sort_bam {
      // sorted bam is queryname sorted, fgbio requirement 
      tuple val(sample_id), val("sorted"), file('*.sorted.bam') into temp_qc_sorted_bam
 
-   memory "32GB"
-
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
-   SortSam \
-   I=${bam} \
-   O=${sample_id}.sorted.bam \
-   SORT_ORDER=queryname
+   sambamba sort --tmpdir=./ \
+   --sort-picard \
+   --nthreads ${task.cpus} \
+   --memory-limit ${task.memory.toGiga()-1}GB \
+   --out=${sample_id}.sorted.bam \
+   ${bam}
    """
  }
 
@@ -230,7 +229,7 @@ process fgbio_filterconsensus{
 
 process sort_filter_bam {
    // Sort alignment by query name
-   label "picard"
+   label "sambamba"
    tag "${sample_id}"
 
    input: 
@@ -238,46 +237,24 @@ process sort_filter_bam {
 
    output:
     //tuple sample_id, "${sample_id}.sorted_filtered.bam" into sorted_filter_consensus_ch 
-    tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_fastq_ch)
+    tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_realignment_ch)
     //sorted_filter_consensus is queryname sorted  
 
    publishDir params.output, overwrite: true
-   
-   memory "32G"
 
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
-   SortSam \
-   I=${bam} \
-   O=${sample_id}.sorted_consensus.bam \
-   SORT_ORDER=queryname
+   sambamba sort --tmpdir=./ \
+   --sort-picard \
+   --nthreads ${task.cpus} \
+   --memory-limit ${task.memory.toGiga()-1}GB \
+   --out=${sample_id}.sorted_consensus.bam \
+   ${bam}
    """
  }
 
-process bam_to_fastqs {
-   label 'picard'
-   tag "${sample_id}"
 
-   input:
-    tuple sample_id, path(bam) from sorted_consensus_fastq_ch
-
-   output:
-    tuple sample_id, "${sample_id}.fastq" into consensus_fastq
-  
-   memory "32G"
-
-   script:
-   """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
-   SamToFastq \
-   I=${bam} \
-   FASTQ=${sample_id}.fastq \
-   INTERLEAVE=true
-   """
- }
-
- process realign_consensus {
+process realign_consensus {
    //-p Assume the first input query file is interleaved paired-end FASTA/Q.
    //-Y use soft clipping for supplementary alignment
    //-K process INT input bases in each batch regardless of nThreads (for reproducibility)
@@ -287,7 +264,7 @@ process bam_to_fastqs {
    input:
      file(reference_fasta) from reference_fasta
      file("*") from bwa_realign_ref_index.collect()
-     tuple val(sample_id), file(fastq) from consensus_fastq
+     tuple sample_id, path(bam) from sorted_consensus_realignment_ch
 
    output:
     tuple sample_id, "${sample_id}.realigned.bam" into realign_ch
@@ -297,13 +274,15 @@ process bam_to_fastqs {
 
    script:
    """
+   samtools bam2fq -n ${bam} | \
    bwa mem \
    -R "@RG\\tID:${sample_id}\\tSM:${sample_id}" \
    -K 10000000 \
    -p \
    -Y \
    -t ${task.cpus} \
-   ${reference_fasta} ${fastq} 2> log.txt \
+   ${reference_fasta} \
+   -p - 2> log.txt \
    | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.realigned.bam
    
    samtools index ${sample_id}.realigned.bam
@@ -312,7 +291,7 @@ process bam_to_fastqs {
 
  process sort_realign_bam {
    //  Sort alignment by query name
-   label 'picard'
+   label 'sambamba'
    tag "${sample_id}"
 
    input: 
@@ -320,17 +299,15 @@ process bam_to_fastqs {
 
    output:
     tuple sample_id, "${sample_id}.sorted.bam" into sorted_realign_consensus_ch
-    // sorted_realign_consensus_ch is queryname sorted    
 
-   memory "32G"
-  
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
-   SortSam \
-   I=${bam} \
-   O=${sample_id}.sorted.bam \
-   SORT_ORDER=queryname
+   sambamba sort --tmpdir=./ \
+   --sort-picard \
+   --nthreads ${task.cpus} \
+   --memory-limit ${task.memory.toGiga()-1}GB \
+   --out=${sample_id}.sorted.bam \
+   ${bam}
    """
  }
 
@@ -355,15 +332,15 @@ process bam_to_fastqs {
 
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ -Dpicard.useLegacyParser=false\
    MergeBamAlignment \
-   UNMAPPED=${sorted_filtered_bam} \
-   ALIGNED=${sorted_bam} \
-   O=${sample_id}.final.bam \
-   R=${reference_fasta} \
-   VALIDATION_STRINGENCY=SILENT \
-   SORT_ORDER=coordinate \
-   CREATE_INDEX=true
+   -UNMAPPED ${sorted_filtered_bam} \
+   -ALIGNED ${sorted_bam} \
+   -O ${sample_id}.final.bam \
+   -R ${reference_fasta} \
+   -VALIDATION_STRINGENCY SILENT \
+   -SORT_ORDER coordinate \
+   -CREATE_INDEX true
 
    mv ${sample_id}.final.bai ${sample_id}.final.bam.bai
    """
@@ -403,21 +380,21 @@ process quality_metrics {
    script:
    """
  
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ -Dpicard.useLegacyParser=false \
    CollectHsMetrics \
-   TARGET_INTERVALS=${picard_targets} \
-   BAIT_INTERVALS=${picard_baits} \
-   COVERAGE_CAP=100000 \
-   REFERENCE_SEQUENCE=${reference_fasta} \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.${bam_type}.hs_metrics 
+   -TARGET_INTERVALS ${picard_targets} \
+   -BAIT_INTERVALS ${picard_baits} \
+   -COVERAGE_CAP 100000 \
+   -REFERENCE_SEQUENCE ${reference_fasta} \
+   -INPUT ${bam} \
+   -OUTPUT ${sample_id}.${bam_type}.hs_metrics 
 
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ -Dpicard.useLegacyParser=false \
    CollectInsertSizeMetrics \
-   INCLUDE_DUPLICATES=true \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.${bam_type}.insert_size_metrics \
-   HISTOGRAM_FILE=${sample_id}.${bam_type}.insert_size_histogram.pdf
+   -INCLUDE_DUPLICATES true \
+   -INPUT ${bam} \
+   -OUTPUT ${sample_id}.${bam_type}.insert_size_metrics \
+   -H ${sample_id}.${bam_type}.insert_size_histogram.pdf
    """
 }
 
