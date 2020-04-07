@@ -394,7 +394,7 @@ process quality_metrics {
    -INCLUDE_DUPLICATES true \
    -INPUT ${bam} \
    -OUTPUT ${sample_id}.${bam_type}.insert_size_metrics \
-   -HISTOGRAM_FILE ${sample_id}.${bam_type}.insert_size_histogram.pdf
+   -H ${sample_id}.${bam_type}.insert_size_histogram.pdf
    """
 }
 
