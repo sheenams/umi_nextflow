@@ -237,7 +237,7 @@ process sort_filter_bam {
 
    output:
     //tuple sample_id, "${sample_id}.sorted_filtered.bam" into sorted_filter_consensus_ch 
-    tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_fastq_ch)
+    tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_realignment_ch)
     //sorted_filter_consensus is queryname sorted  
 
    publishDir params.output, overwrite: true
@@ -253,29 +253,8 @@ process sort_filter_bam {
    """
  }
 
-process bam_to_fastqs {
-   label 'picard'
-   tag "${sample_id}"
 
-   input:
-    tuple sample_id, path(bam) from sorted_consensus_fastq_ch
-
-   output:
-    tuple sample_id, "${sample_id}.fastq" into consensus_fastq
-  
-   memory "32G"
-
-   script:
-   """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
-   SamToFastq \
-   I=${bam} \
-   FASTQ=${sample_id}.fastq \
-   INTERLEAVE=true
-   """
- }
-
- process realign_consensus {
+process realign_consensus {
    //-p Assume the first input query file is interleaved paired-end FASTA/Q.
    //-Y use soft clipping for supplementary alignment
    //-K process INT input bases in each batch regardless of nThreads (for reproducibility)
@@ -285,7 +264,7 @@ process bam_to_fastqs {
    input:
      file(reference_fasta) from reference_fasta
      file("*") from bwa_realign_ref_index.collect()
-     tuple val(sample_id), file(fastq) from consensus_fastq
+     tuple sample_id, path(bam) from sorted_consensus_realignment_ch
 
    output:
     tuple sample_id, "${sample_id}.realigned.bam" into realign_ch
@@ -295,13 +274,15 @@ process bam_to_fastqs {
 
    script:
    """
+   samtools bam2fq -n ${bam} | \
    bwa mem \
    -R "@RG\\tID:${sample_id}\\tSM:${sample_id}" \
    -K 10000000 \
    -p \
    -Y \
    -t ${task.cpus} \
-   ${reference_fasta} ${fastq} 2> log.txt \
+   ${reference_fasta} \
+   -p - 2> log.txt \
    | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.realigned.bam
    
    samtools index ${sample_id}.realigned.bam
