@@ -82,7 +82,7 @@ process bwa {
 
 process sort_bam {
    //  Sort alignment by query name
-   label 'picard'
+   label 'sambamba'
    tag "${sample_id}"
 
    input: 
@@ -93,15 +93,14 @@ process sort_bam {
      // sorted bam is queryname sorted, fgbio requirement 
      tuple val(sample_id), val("sorted"), file('*.sorted.bam') into temp_qc_sorted_bam
 
-   memory "32GB"
-
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
-   SortSam \
-   I=${bam} \
-   O=${sample_id}.sorted.bam \
-   SORT_ORDER=queryname
+   sambamba sort --tmpdir=./ \
+   --sort-picard \
+   --nthreads ${task.cpus} \
+   --memory-limit ${task.memory.toGiga()-1}GB \
+   --out=${sample_id}.sorted.bam \
+   ${bam}
    """
  }
 
@@ -230,7 +229,7 @@ process fgbio_filterconsensus{
 
 process sort_filter_bam {
    // Sort alignment by query name
-   label "picard"
+   label "sambamba"
    tag "${sample_id}"
 
    input: 
@@ -242,16 +241,15 @@ process sort_filter_bam {
     //sorted_filter_consensus is queryname sorted  
 
    publishDir params.output, overwrite: true
-   
-   memory "32G"
 
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
-   SortSam \
-   I=${bam} \
-   O=${sample_id}.sorted_consensus.bam \
-   SORT_ORDER=queryname
+   sambamba sort --tmpdir=./ \
+   --sort-picard \
+   --nthreads ${task.cpus} \
+   --memory-limit ${task.memory.toGiga()-1}GB \
+   --out=${sample_id}.sorted_consensus.bam \
+   ${bam}
    """
  }
 
@@ -320,17 +318,15 @@ process bam_to_fastqs {
 
    output:
     tuple sample_id, "${sample_id}.sorted.bam" into sorted_realign_consensus_ch
-    // sorted_realign_consensus_ch is queryname sorted    
 
-   memory "32G"
-  
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
-   SortSam \
-   I=${bam} \
-   O=${sample_id}.sorted.bam \
-   SORT_ORDER=queryname
+   sambamba sort --tmpdir=./ \
+   --sort-picard \
+   --nthreads ${task.cpus} \
+   --memory-limit ${task.memory.toGiga()-1}GB \
+   --out=${sample_id}.sorted.bam \
+   ${bam}
    """
  }
 
