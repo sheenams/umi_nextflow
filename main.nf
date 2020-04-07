@@ -332,7 +332,7 @@ process realign_consensus {
 
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ -Dpicard.useLegacyParser=false\
    MergeBamAlignment \
    -UNMAPPED ${sorted_filtered_bam} \
    -ALIGNED ${sorted_bam} \
@@ -380,7 +380,7 @@ process quality_metrics {
    script:
    """
  
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ -Dpicard.useLegacyParser=false \
    CollectHsMetrics \
    -TARGET_INTERVALS ${picard_targets} \
    -BAIT_INTERVALS ${picard_baits} \
@@ -389,7 +389,7 @@ process quality_metrics {
    -INPUT ${bam} \
    -OUTPUT ${sample_id}.${bam_type}.hs_metrics 
 
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ -Dpicard.useLegacyParser=false \
    CollectInsertSizeMetrics \
    -INCLUDE_DUPLICATES true \
    -INPUT ${bam} \
