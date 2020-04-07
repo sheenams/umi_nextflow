@@ -310,7 +310,7 @@ process bam_to_fastqs {
 
  process sort_realign_bam {
    //  Sort alignment by query name
-   label 'picard'
+   label 'sambamba'
    tag "${sample_id}"
 
    input: 
