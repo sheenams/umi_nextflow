@@ -19,6 +19,11 @@
             "default": null,
             "title": "Downsample FASTQ reads to # of pairs:",
             "type": "string"
+        },
+        "save_intermediate_output": {
+            "default": false,
+            "title": "Save intermediate output bam (and other) files.",
+            "type": "boolean"
         }
     },
     "required": [

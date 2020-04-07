@@ -5,8 +5,9 @@ fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', f
                        .view()
                        .into{align_input; fastqc_ch}
 
-// initialize optional downsample_reads to null
+// initialize optional parameters
 params.downsample_reads = null
+params.save_intermediate_output = false
 
 // Assay specific files
 picard_targets = file(params.picard_targets)
@@ -22,7 +23,6 @@ reference_index = Channel.fromPath(params.ref_index).into {
   qc_ref_index;
   filter_con_ref_index
 }
-
 
 process bwa {
    // Align fastqs
@@ -121,7 +121,7 @@ process fgbio_setmateinformation{
 
    memory "32G"
 
-   publishDir params.output, overwrite: true
+   publishDir path: {params.save_intermediate_output ? params.output : null}, overwrite: true
 
    script:
    """
@@ -146,7 +146,7 @@ process fgbio_group_umi {
 
    memory "32G"
 
-   publishDir params.output, overwrite: true
+   publishDir path: {params.save_intermediate_output ? params.output : null}, overwrite: true
 
    script:
    """
@@ -177,7 +177,7 @@ process fgbio_callconsensus{
 
    memory "32G"
 
-   publishDir params.output, overwrite: true
+   publishDir path: {params.save_intermediate_output ? params.output : null}, overwrite: true
 
    script:
    """
@@ -210,7 +210,7 @@ process fgbio_filterconsensus{
 
    memory "32G"
 
-   publishDir params.output, overwrite: true
+   publishDir path: {params.save_intermediate_output ? params.output : null}, overwrite: true
 
    script:
    """
@@ -236,11 +236,9 @@ process sort_filter_bam {
     tuple sample_id, path(bam) from filter_consensus_bam_ch
 
    output:
-    //tuple sample_id, "${sample_id}.sorted_filtered.bam" into sorted_filter_consensus_ch 
     tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_realignment_ch)
-    //sorted_filter_consensus is queryname sorted  
-
-   publishDir params.output, overwrite: true
+    
+   publishDir path: {params.save_intermediate_output ? params.output : null}, overwrite: true
 
    script:
    """
