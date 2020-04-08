@@ -49,7 +49,7 @@ if __name__ == '__main__':
 
     parser_picard = subparsers.add_parser('picard')
     parser_picard.add_argument('input', type=argparse.FileType(), help="MultiQC JSON file to parse")
-    parser_picard.add_argument('output', type=argparse.FileType('w'), help="Output CSV file")
+    parser_picard.add_argument('output', type=argparse.FileType('w'), nargs='?', default=sys.stdout, help="Output CSV file")
     parser_picard.set_defaults(func=parse_picard)
 
     args = parser.parse_args()
