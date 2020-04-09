@@ -9,17 +9,12 @@ import json
 import argparse 
 import pandas as pd
 
-picard_fields = ["TOTAL_READS", "MEAN_TARGET_COVERAGE", 
-                 "PCT_USABLE_BASES_ON_TARGET", "PCT_OFF_BAIT", "PCT_TARGET_BASES_100X",
-                 "PCT_SELECTED_BASES"]
-
 picard_format = {
-    'TOTAL_READS': "{:.0f}",
-    'MEAN_TARGET_COVERAGE': "{:.0f}",
-    'PCT_USABLE_BASES_ON_TARGET': "{:.1%}",
-    'PCT_TARGET_BASES_100X': "{:.1%}",
-    'PCT_SELECTED_BASES': "{:.1%}",
-    'PCT_OFF_BAIT': "{:.1%}",
+    'TOTAL_READS': ("Total Reads", "{:.0f}"),
+    'MEDIAN_TARGET_COVERAGE': ("Median Target Cov.", "{:.0f}"),
+    'PCT_ON_BAIT_BASES': ("% on bait", "{:.1%}"),
+    'PCT_ON_TARGET_BASES': ("% on target", "{:.1%}"),
+    'PCT_TARGET_BASES_100X': ("% bases >100x", "{:.1%}"),
 }
 
 HEADER = """# plot_type: 'table'
@@ -31,14 +26,32 @@ def parse_picard(args):
     df = pd.DataFrame(j["report_saved_raw_data"]["multiqc_picard_HsMetrics"]).T
     df["sample_names"] = df.index.map(lambda i: i.split(".")[0])
     df["bam_type"] = df.index.map(lambda i: i.split(".")[-1])
-    df = df.sort_values(["sample_names", "bam_type"], ascending=[True, False])
+    df = df.sort_values(["sample_names", "bam_type"], ascending=[True, True])
     
-    for key, formatter in picard_format.items():
-        df[key] = df[key].apply(formatter.format)
+    # custom column generation
+    df["PCT_ON_BAIT_BASES"] = df["ON_BAIT_BASES"]/df["PF_UQ_BASES_ALIGNED"]
+    df["PCT_ON_TARGET_BASES"] = df["ON_TARGET_BASES"]/df["PF_UQ_BASES_ALIGNED"]
+
+    # limit to only output columns
+    cols = ["sample_names", "bam_type"] + list(picard_format.keys())
+    df = df[cols]
+
+    # rename and reformat columns
+    for key, col_def in picard_format.items():
+        col_name, col_fmt = col_def
+        df[col_name] = df[key].apply(col_fmt.format)
+        del df[key]
+
+    # unstack bam_type rows into columns (so that standard/final appear as columns)
+    df = df.set_index(['sample_names', 'bam_type']).unstack(level=-1).reset_index()
+    df = df.sort_index(level=[0,1], axis=1, ascending=[False, False])
+    print(df)
+    # rename multicolumn index to columns ("TOTAL_READS", "standard") -> "TOTAL_READS (standard)"
+    # also add some formatting to help distinguish. Note MultiQC will respect HTML in these headers!
+    df.columns = [f"{i} <br/><span style='color: blue'>({t})</span>" for i, t in df.columns]
 
     args.output.write(HEADER + "\n")
-    cols = ["bam_type"] + picard_fields
-    df[cols].to_csv(args.output, sep=",")
+    df.to_csv(args.output, sep=",", index=False)
 
 if __name__ == '__main__':
 
@@ -55,9 +68,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    try:
-        args.func(args)
-    except AttributeError:
-        parser.print_help(sys.stderr)
-        sys.exit(1)        
+    #try:
+    args.func(args)
+    #except AttributeError:
+        # parser.print_help(sys.stderr)
+        # sys.exit(1)        
 
