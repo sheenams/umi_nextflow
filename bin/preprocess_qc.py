@@ -21,7 +21,7 @@ HEADER = """# plot_type: 'table'
 # section_name: 'UMI Summary'
 """
 
-def parse_picard(args):
+def write_summary(args):
     j = json.load(args.input)
     df = pd.DataFrame(j["report_saved_raw_data"]["multiqc_picard_HsMetrics"]).T
     df["sample_names"] = df.index.map(lambda i: i.split(".")[0])
@@ -45,13 +45,28 @@ def parse_picard(args):
     # unstack bam_type rows into columns (so that standard/final appear as columns)
     df = df.set_index(['sample_names', 'bam_type']).unstack(level=-1).reset_index()
     df = df.sort_index(level=[0,1], axis=1, ascending=[False, False])
-    print(df)
+
+    # set sample name to index
+    df = df.set_index("sample_names")
+    
+    # Add in fgbio stats
+    # these are the UMI histogram percentages
+    umi_data = j["report_plot_data"]["fgbio-groupreadsbyumi-plot"]["datasets"][1]
+    sample_names = [d["name"].split(".")[0] for d in umi_data]
+    umi_df = pd.DataFrame(index = sample_names)
+    # calculate non-singleton fraction (i.e., 1.0 - fraction_singletons)
+    umi_df[("% UMI ≥ 2", "final")] = [1.0 - d["data"][0][1] for d in umi_data]   
+    # format as percentage
+    umi_df[("% UMI ≥ 2", "final")] = umi_df[("% UMI ≥ 2", "final")].apply("{:.1%}".format)
+    # merge umi_df and df
+    df = pd.merge(df, umi_df, left_index=True, right_index=True)
+
     # rename multicolumn index to columns ("TOTAL_READS", "standard") -> "TOTAL_READS (standard)"
     # also add some formatting to help distinguish. Note MultiQC will respect HTML in these headers!
     df.columns = [f"{i} <br/><span style='color: blue'>({t})</span>" for i, t in df.columns]
 
     args.output.write(HEADER + "\n")
-    df.to_csv(args.output, sep=",", index=False)
+    df.to_csv(args.output, sep=",", index=True)
 
 if __name__ == '__main__':
 
@@ -60,10 +75,10 @@ if __name__ == '__main__':
         formatter_class=argparse.RawDescriptionHelpFormatter)
     subparsers = parser.add_subparsers()
 
-    parser_picard = subparsers.add_parser('picard')
-    parser_picard.add_argument('input', type=argparse.FileType(), help="MultiQC JSON file to parse")
-    parser_picard.add_argument('output', type=argparse.FileType('w'), nargs='?', default=sys.stdout, help="Output CSV file")
-    parser_picard.set_defaults(func=parse_picard)
+    summary_parser = subparsers.add_parser('summary')
+    summary_parser.add_argument('input', type=argparse.FileType(), help="MultiQC JSON file to parse")
+    summary_parser.add_argument('output', type=argparse.FileType('w'), nargs='?', default=sys.stdout, help="Output CSV file")
+    summary_parser.set_defaults(func=write_summary)
 
     args = parser.parse_args()
 
