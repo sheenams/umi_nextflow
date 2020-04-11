@@ -90,8 +90,6 @@ process sort_bam {
 
    output:
      tuple val(sample_id), file('*.sorted.bam') into set_mate_ch
-     // sorted bam is queryname sorted, fgbio requirement 
-     tuple val(sample_id), val("sorted"), file('*.sorted.bam') into temp_qc_sorted_bam
 
    script:
    """
@@ -142,7 +140,9 @@ process fgbio_group_umi {
 
    output:
      tuple val(sample_id), file('*.grpumi.bam') into grp_umi_bam_ch
+     tuple val(sample_id), val("grpumi"), file('*.grpumi.bam') into qc_grpumi_bam
      file('*.grpumi.histogram') into histogram_ch
+
 
    memory "32G"
 
@@ -174,6 +174,7 @@ process fgbio_callconsensus{
 
    output:
      tuple val(sample_id), file('*.consensus.bam') into consensus_bam_ch
+     tuple val(sample_id), val("consensus"), file('*.consensus.bam') into qc_consensus_bam
 
    memory "32G"
 
@@ -207,6 +208,7 @@ process fgbio_filterconsensus{
 
    output:
      tuple val(sample_id), file('*.filtered_consensus.bam') into filter_consensus_bam_ch
+     tuple val(sample_id), val("filtered_consensus"), file('*.filtered_consensus.bam') into qc_filtered_consensus_bam
 
    memory "32G"
 
@@ -349,11 +351,37 @@ process realign_consensus {
 // Combine channels for quality here
 // into a single quality_ch for processing below.
 
-//qc_consensus_bam,
-//qc_filtered_consensus_bam
+qc_final_bam.mix(
+  qc_standard_bam,
+).into{ hs_metrics_ch; mosdepth_qc_ch; temp_x } 
 
-qc_final_bam.mix(qc_standard_bam)
-            .into{ hs_metrics_ch; mosdepth_qc_ch } 
+temp_x.mix(
+  qc_grpumi_bam,
+  qc_consensus_bam,
+  qc_filtered_consensus_bam
+).map { [it[0], it[1], it[2]] } // excludes bai file which may not be present in stream
+.into { simple_count_qc_ch }
+
+process simple_quality_metrics {
+  label 'sambamba'
+  tag "${sample_id}"
+  
+  cpus 2
+  memory "2GB"
+
+  input:
+    tuple val(sample_id), val(bam_type), file(bam) from simple_count_qc_ch
+  output:
+    file("${sample_id}.${bam_type}.flagstats.txt") into simple_count_out_ch
+
+  script:
+  """
+  sambamba flagstat ${bam} \
+    2> /dev/null \
+    > ${sample_id}.${bam_type}.flagstats.txt
+  """
+
+}
 
 
 process quality_metrics {
@@ -450,6 +478,7 @@ process multiqc {
   input:
      path('*') from fastqc_report_ch.flatMap().collect()
      path('*') from hs_metrics_out_ch.flatMap().collect()
+     path('*') from simple_count_out_ch.flatMap().collect()
      path('*') from insert_size_metrics_ch.flatMap().collect()
      path('*') from histogram_ch.flatMap().collect()
      path("*") from mosdepth_out_ch.flatMap().collect()
@@ -466,8 +495,10 @@ process multiqc {
 
   script:
   """
+  preprocess_qc.py counts *.flagstats.txt --output qc_counts.${params.run_id}_mqc.csv
+  rm *.flagstats.txt
   multiqc -d --filename "multiqc_report_pre.${params.run_id}.html" .
-  preprocess_qc.py picard multiqc_report_pre.${params.run_id}_data/multiqc_data.json qc_summary.${params.run_id}_mqc.csv
+  preprocess_qc.py summary multiqc_report_pre.${params.run_id}_data/multiqc_data.json qc_summary.${params.run_id}_mqc.csv
   rm -rf multiqc_report_pre.${params.run_id}_data
   multiqc -d -e general_stats --filename "multiqc_report.${params.run_id}.html" .
   """
