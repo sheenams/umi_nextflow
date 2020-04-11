@@ -478,7 +478,7 @@ process multiqc {
   input:
      path('*') from fastqc_report_ch.flatMap().collect()
      path('*') from hs_metrics_out_ch.flatMap().collect()
-     path('flagstats/*') from simple_count_out_ch.flatMap().collect()
+     path('*') from simple_count_out_ch.flatMap().collect()
      path('*') from insert_size_metrics_ch.flatMap().collect()
      path('*') from histogram_ch.flatMap().collect()
      path("*") from mosdepth_out_ch.flatMap().collect()
@@ -495,10 +495,10 @@ process multiqc {
 
   script:
   """
+  preprocess_qc.py counts *.flagstats.txt --output qc_counts.${params.run_id}_mqc.csv
+  rm *.flagstats.txt
   multiqc -d --filename "multiqc_report_pre.${params.run_id}.html" .
   preprocess_qc.py summary multiqc_report_pre.${params.run_id}_data/multiqc_data.json qc_summary.${params.run_id}_mqc.csv
-  preprocess_qc.py counts flagstats/*.flagstats.txt --output qc_counts.${params.run_id}_mqc.csv
-  rm -rf flagstats/
   rm -rf multiqc_report_pre.${params.run_id}_data
   multiqc -d -e general_stats --filename "multiqc_report.${params.run_id}.html" .
   """

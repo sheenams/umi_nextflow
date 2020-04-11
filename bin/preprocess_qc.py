@@ -88,7 +88,7 @@ def write_counts(args):
         df = pd.DataFrame(readcounts)
         df.index.name = 'sample_names'
         out.write(create_header('Readcounts by pipeline stage'))
-        df.to_csv(out)
+        df[['standard', 'grpumi', 'consensus', 'filtered_consensus', 'final']].to_csv(out)
 
 if __name__ == '__main__':
 
