@@ -8,6 +8,7 @@ import glob
 import json
 import argparse 
 import pandas as pd
+from collections import defaultdict
 
 picard_format = {
     'TOTAL_READS': ("Total Reads", "{:.0f}"),
@@ -17,8 +18,10 @@ picard_format = {
     'PCT_TARGET_BASES_100X': ("% bases >100x", "{:.1%}"),
 }
 
-HEADER = """# plot_type: 'table'
-# section_name: 'UMI Summary'
+def create_header(name):
+    return f"""# plot_type: 'table'
+# section_name: '{name}'
+
 """
 
 def write_summary(args):
@@ -65,8 +68,27 @@ def write_summary(args):
     # also add some formatting to help distinguish. Note MultiQC will respect HTML in these headers!
     df.columns = [f"{i} <br/><span style='color: blue'>({t})</span>" for i, t in df.columns]
 
-    args.output.write(HEADER + "\n")
+    args.output.write(create_header('UMI Summary'))
     df.to_csv(args.output, sep=",", index=True)
+
+def write_counts(args):
+    """
+    Reads flagstat files created by samtools/sambamba and outputs a CSV.
+    Input flagstat files MUST be named by {sample_name}.{bam_type}.flagstat.txt
+    """
+    readcounts = defaultdict(dict)
+    with args.output as out:
+        for infile in args.input:
+            contents = infile.read()
+            readcount = contents.split(" ")[0]
+            sample_name = infile.name.split(".")[0]
+            bam_type = infile.name.split(".")[1]
+            readcounts[bam_type][sample_name] = readcount
+            
+        df = pd.DataFrame(readcounts)
+        df.index.name = 'sample_names'
+        out.write(create_header('Readcounts by pipeline stage'))
+        df.to_csv(out)
 
 if __name__ == '__main__':
 
@@ -77,15 +99,23 @@ if __name__ == '__main__':
 
     summary_parser = subparsers.add_parser('summary')
     summary_parser.add_argument('input', type=argparse.FileType(), help="MultiQC JSON file to parse")
-    summary_parser.add_argument('output', type=argparse.FileType('w'), nargs='?', default=sys.stdout, help="Output CSV file")
+    summary_parser.add_argument('output', type=argparse.FileType('w'), nargs='?', 
+        default=sys.stdout, help="Output CSV file")
     summary_parser.set_defaults(func=write_summary)
+
+    count_parser = subparsers.add_parser('counts', description=write_counts.__doc__)
+    count_parser.add_argument('input', type=argparse.FileType(), nargs='+', help="Flagstat file(s)")
+    count_parser.add_argument('--output', type=argparse.FileType('w'), nargs='?', 
+        default=sys.stdout, help="Output CSV file")
+    count_parser.set_defaults(func=write_counts)
+
 
     args = parser.parse_args()
 
 
-    #try:
-    args.func(args)
-    #except AttributeError:
-        # parser.print_help(sys.stderr)
-        # sys.exit(1)        
+    try:
+        args.func(args)
+    except AttributeError:
+        parser.print_help(sys.stderr)
+        sys.exit(1)        
 
