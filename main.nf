@@ -531,7 +531,7 @@ process mpileup {
   // -d 100000: maximum depth of 100,000
   """
   bcftools mpileup \
-    {bam} \
+    ${bam} \
     --fasta-ref ${reference_fasta} \
     --regions-file ${bed} \
     -Q 0 \
