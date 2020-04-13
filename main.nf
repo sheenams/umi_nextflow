@@ -12,7 +12,7 @@ params.save_intermediate_output = false
 // Assay specific files
 picard_targets = file(params.picard_targets)
 picard_baits = file(params.picard_baits)
-bed_file = file(params.bed)
+bed_targets = file(params.bed_targets)
 
 // Reference genome is used multiple times
 reference_fasta = file(params.ref_fasta)
@@ -21,7 +21,8 @@ reference_index = Channel.fromPath(params.ref_index).into {
   bwa_realign_ref_index;
   picard_ref_index;
   qc_ref_index;
-  filter_con_ref_index
+  filter_con_ref_index;
+  mpileup_ref_index
 }
 
 process bwa {
@@ -324,7 +325,7 @@ process realign_consensus {
     tuple sample_id, path(sorted_bam), path(sorted_filtered_bam) from merge_ch
 
    output:
-     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into qc_final_bam
+     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, mpileup_bam)
      
 
    publishDir params.output, overwrite: true
@@ -453,7 +454,7 @@ process mosdepth {
    tag "${sample_id}"
 
    input:
-      file(bed) from bed_file
+      file(bed) from bed_targets
       tuple val(sample_id), val(bam_type), file(bam), file(bai) from mosdepth_qc_ch
    output:
       file "${sample_id}.${bam_type}.regions.bed.gz"
@@ -501,6 +502,42 @@ process multiqc {
   preprocess_qc.py summary multiqc_report_pre.${params.run_id}_data/multiqc_data.json qc_summary.${params.run_id}_mqc.csv
   rm -rf multiqc_report_pre.${params.run_id}_data
   multiqc -d -e general_stats --filename "multiqc_report.${params.run_id}.html" .
+  """
+}
+
+
+////////////////
+// Variant QC //
+////////////////
+
+
+process mpileup {
+  label 'bcftools'
+  input:
+    file(bed) from bed_targets
+    file(reference_fasta) from reference_fasta
+    file("*") from mpileup_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
+    tuple val(sample_id), val(bam_type), file(bam), file(bai) from mpileup_bam
+  output:
+    file("${sample_id}.${bam_type}.mpileup.vcf")
+
+  publishDir params.output, overwrite: true
+
+  memory '4GB'
+  cpus '2'
+
+  script:
+  // -Q 0: minimum BQ of 0
+  // -d 100000: maximum depth of 100,000
+  """
+  bcftools mpileup \
+    {bam} \
+    --fasta-ref ${reference_fasta} \
+    --regions-file ${bed} \
+    -Q 0 \
+    -d 100000 \
+    --annotate FORMAT/AD,INFO/AD \
+    > ${sample_id}.${bam_type}.mpileup.vcf
   """
 }
 
