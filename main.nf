@@ -47,11 +47,12 @@ process bwa {
    // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?, -p using paired end input
    // seqtk sample options:
    // -s seed
+   // -2 -- use a two-pass approach to reduce memory consumption
    if ("downsample_reads" in params)
      """
      seqtk mergepe \
-       <(seqtk sample -s 10000000 ${fastq1} ${params.downsample_reads}) \
-       <(seqtk sample -s 10000000 ${fastq2} ${params.downsample_reads}) \
+       <(seqtk sample -2 -s 10000000 ${fastq1} ${params.downsample_reads}) \
+       <(seqtk sample -2 -s 10000000 ${fastq2} ${params.downsample_reads}) \
      | bwa mem \
        -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
        -K 10000000 \
