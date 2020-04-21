@@ -1,10 +1,25 @@
 #!/usr/bin/env nextflow
 
 // Setup the various inputs, defined in nexflow.config
-fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
-                       .view()
+if (params.input_source == "flat_folder") {
+  fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
+                         .view()
+                         .into{align_input; fastqc_ch}
+} else {
+  // eg "s3://uwlm-personal/umi_development/fastq/294R/demux-nf-umi/libraries/**/{1,2}.fastq.gz"
+  fastq_pair_ch = Channel.fromPath(params.input_folder + "**/{1,2}.fastq.gz")
+                       .map { path ->
+                          def (fastq, readgroup, library_type, sample_id, rest) = path.toString().tokenize("/").reverse() 
+                          return [sample_id, path]
+                        }
+                       .groupTuple()
+                       .map{ 
+                          // ensure two files present for each sample
+                          key, files -> if (files.size() != 2) error "Samples must each have exactly two FASTQ files." 
+                          return [key, files]
+                        }
                        .into{align_input; fastqc_ch}
-
+}
 // initialize optional parameters
 params.downsample_reads = null
 params.save_intermediate_output = false

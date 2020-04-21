@@ -1,5 +1,14 @@
 {
     "properties": {
+        "input_source": {
+            "default": "flat_folder",
+              "title": "Source folder structure (include trailing slash)",
+              "type": "string",
+              "enum": [
+                "flat_folder",
+                "library_tree"
+              ]
+        },
         "input_folder": {
             "default": "s3://uwlm-personal/nkrumm/umi/fastq/280R/",
             "title": "Folder with FASTQs",
