@@ -16,7 +16,7 @@ if (params.input_source == "flat_folder") {
                        .map{ 
                           // ensure two files present for each sample
                           key, files -> if (files.size() != 2) error "Samples must each have exactly two FASTQ files." 
-                          return [key, files]
+                          return [key, files[0], files[1]]
                         }
                        .into{align_input; fastqc_ch}
 }
