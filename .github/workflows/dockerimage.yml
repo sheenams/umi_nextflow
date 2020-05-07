@@ -15,6 +15,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Build the Docker image
-      run: docker build dockerfiles/umi-varcal --file dockerfiles/umi-varcal/Dockerfile --tag umi-varcal:v1.0
+      run: docker build dockerfiles/umi-varcal --file dockerfiles/umi-varcal/Dockerfile --tag sheenamt/umi-varcal:v1.0
     - name: Push Dockerhub
-      run: echo ${{ secrets.DOCKER_PASSWORD }} | docker login --password-stdin -u "${{ secrets.DOCKER_USERNAME }}" && docker push umi-varcal:v1.0
+      run: echo ${{ secrets.DOCKER_PASSWORD }} | docker login --password-stdin -u "${{ secrets.DOCKER_USERNAME }}" && docker push sheenamt/umi-varcal:v1.0
