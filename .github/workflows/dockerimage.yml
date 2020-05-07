@@ -10,6 +10,7 @@ jobs:
 
   build_umi_varcal:
     runs-on: ubuntu-latest
+    steps: 
     - uses: actions/checkout@v2
     - name: build and push 
       uses: docker/build-push-action@v1
@@ -23,6 +24,7 @@ jobs:
 
   build_deepsnvminer:
     runs-on: ubuntu-latest
+    steps:
     - uses: actions/checkout@v2
     - name: build and push 
       uses: docker/build-push-action@v1
