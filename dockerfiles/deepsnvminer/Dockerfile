@@ -22,7 +22,7 @@ ENV SAMTOOLS_VERSION 1.3.1
 RUN curl -SL https://github.com/samtools/samtools/releases/download/$SAMTOOLS_VERSION/samtools-$SAMTOOLS_VERSION.tar.bz2 \
     | tar -xjC /tmp/ \
     && cd /tmp/samtools-$SAMTOOLS_VERSION \
-    && make \
+    && make prefix=/usr/bin \
     && make install
 
 RUN rm -rf /tmp/bwa-$BWA_VERSION /tmp/samtools-$SAMTOOLS_VERSION \
@@ -30,4 +30,4 @@ RUN rm -rf /tmp/bwa-$BWA_VERSION /tmp/samtools-$SAMTOOLS_VERSION \
     && apt-get remove --yes --purge build-essential gcc-multilib apt-utils zlib1g-dev
 
  RUN git clone https://github.com/mattmattmattmatt/DeepSNVMiner.git && \
-    cd DeepSNVMiner
+    cd DeepSNVMiner 
