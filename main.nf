@@ -10,7 +10,6 @@ params.downsample_reads = null
 
 // Assay specific files
 picard_targets = file(params.picard_targets)
-picard_baits = file(params.picard_baits)
 bed_file = file(params.bed)
 
 // Reference genome is used multiple times
@@ -385,7 +384,6 @@ process quality_metrics {
 
    input:
      file(picard_targets) from picard_targets
-     file(picard_baits) from picard_baits
      file(reference_fasta) from reference_fasta
      file("*") from qc_ref_index.collect()
      tuple val(sample_id), val(bam_type), file(bam), file(bai) from hs_metrics_ch
@@ -404,7 +402,7 @@ process quality_metrics {
    picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
    CollectHsMetrics \
    TARGET_INTERVALS=${picard_targets} \
-   BAIT_INTERVALS=${picard_baits} \
+   BAIT_INTERVALS=${picard_targets} \
    COVERAGE_CAP=100000 \
    REFERENCE_SEQUENCE=${reference_fasta} \
    INPUT=${bam} \
