@@ -16,4 +16,5 @@ jobs:
     - uses: actions/checkout@v2
     - name: Build the Docker image
       run: docker build dockerfiles/umi-varcal --file dockerfiles/umi-varcal/Dockerfile --tag umi-varcal:v1.0
-
+    - name: Push Dockerhub
+      run: echo "$DOCKER_PASSWORD" | docker login --password-stdin -u "$DOCKER_USER" && docker push umi-varcal:v1.0
