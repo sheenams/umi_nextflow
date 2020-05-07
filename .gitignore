@@ -1,4 +1,4 @@
 work/
 *~
 .nextflow*
-reference/.DS_Store
+.DS_Store

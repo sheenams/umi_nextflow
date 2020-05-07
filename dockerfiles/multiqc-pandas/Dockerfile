@@ -8,7 +8,9 @@ RUN apt-get update \
 
 RUN pip install pandas
 
-RUN pip install multiqc
+#RUN pip install multiqc
+RUN apt-get install -y git
+RUN pip install git+https://github.com/nkrumm/multiqc.git@fgbio-relative-percent-view
 
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8

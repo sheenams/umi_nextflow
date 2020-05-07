@@ -1,12 +1,28 @@
 #!/usr/bin/env nextflow
 
 // Setup the various inputs, defined in nexflow.config
-fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
-                       .view()
+if (params.input_source == "flat_folder") {
+  fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
+                         .view()
+                         .into{align_input; fastqc_ch}
+} else {
+  // eg "s3://uwlm-personal/umi_development/fastq/294R/demux-nf-umi/libraries/**/{1,2}.fastq.gz"
+  fastq_pair_ch = Channel.fromPath(params.input_folder + "**/{1,2}.fastq.gz")
+                       .map { path ->
+                          def (fastq, readgroup, library_type, sample_id, rest) = path.toString().tokenize("/").reverse() 
+                          return [sample_id, path]
+                        }
+                       .groupTuple()
+                       .map{ 
+                          // ensure two files present for each sample
+                          key, files -> if (files.size() != 2) error "Samples must each have exactly two FASTQ files." 
+                          return [key, files[0], files[1]]
+                        }
                        .into{align_input; fastqc_ch}
-
-// initialize optional downsample_reads to null
+}
+// initialize optional parameters
 params.downsample_reads = null
+params.save_intermediate_output = false
 
 // Assay specific files
 picard_targets = file(params.picard_targets)
@@ -21,7 +37,6 @@ reference_index = Channel.fromPath(params.ref_index).into {
   qc_ref_index;
   filter_con_ref_index
 }
-
 
 process bwa {
    // Align fastqs
@@ -46,11 +61,12 @@ process bwa {
    // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?, -p using paired end input
    // seqtk sample options:
    // -s seed
+   // -2 -- use a two-pass approach to reduce memory consumption
    if ("downsample_reads" in params)
      """
      seqtk mergepe \
-       <(seqtk sample -s 10000000 ${fastq1} ${params.downsample_reads}) \
-       <(seqtk sample -s 10000000 ${fastq2} ${params.downsample_reads}) \
+       <(seqtk sample -2 -s 10000000 ${fastq1} ${params.downsample_reads}) \
+       <(seqtk sample -2 -s 10000000 ${fastq2} ${params.downsample_reads}) \
      | bwa mem \
        -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
        -K 10000000 \
@@ -81,7 +97,7 @@ process bwa {
 
 process sort_bam {
    //  Sort alignment by query name
-   label 'picard'
+   label 'sambamba'
    tag "${sample_id}"
 
    input: 
@@ -89,18 +105,15 @@ process sort_bam {
 
    output:
      tuple val(sample_id), file('*.sorted.bam') into set_mate_ch
-     // sorted bam is queryname sorted, fgbio requirement 
-     tuple val(sample_id), val("sorted"), file('*.sorted.bam') into temp_qc_sorted_bam
-
-   memory "32GB"
 
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
-   SortSam \
-   I=${bam} \
-   O=${sample_id}.sorted.bam \
-   SORT_ORDER=queryname
+   sambamba sort --tmpdir=./ \
+   --sort-picard \
+   --nthreads ${task.cpus} \
+   --memory-limit ${task.memory.toGiga()-1}GB \
+   --out=${sample_id}.sorted.bam \
+   ${bam}
    """
  }
 
@@ -121,7 +134,7 @@ process fgbio_setmateinformation{
 
    memory "32G"
 
-   publishDir params.output, overwrite: true
+   publishDir path: params.output, overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -142,11 +155,13 @@ process fgbio_group_umi {
 
    output:
      tuple val(sample_id), file('*.grpumi.bam') into grp_umi_bam_ch
+     tuple val(sample_id), val("grpumi"), file('*.grpumi.bam') into qc_grpumi_bam
      file('*.grpumi.histogram') into histogram_ch
+
 
    memory "32G"
 
-   publishDir params.output, overwrite: true
+   publishDir path: params.output, overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -174,10 +189,11 @@ process fgbio_callconsensus{
 
    output:
      tuple val(sample_id), file('*.consensus.bam') into consensus_bam_ch
+     tuple val(sample_id), val("consensus"), file('*.consensus.bam') into qc_consensus_bam
 
    memory "32G"
 
-   publishDir params.output, overwrite: true
+   publishDir path: params.output, overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -207,10 +223,11 @@ process fgbio_filterconsensus{
 
    output:
      tuple val(sample_id), file('*.filtered_consensus.bam') into filter_consensus_bam_ch
+     tuple val(sample_id), val("filtered_consensus"), file('*.filtered_consensus.bam') into qc_filtered_consensus_bam
 
    memory "32G"
 
-   publishDir params.output, overwrite: true
+   publishDir path: params.output, overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -229,54 +246,30 @@ process fgbio_filterconsensus{
 
 process sort_filter_bam {
    // Sort alignment by query name
-   label "picard"
+   label "sambamba"
    tag "${sample_id}"
 
    input: 
     tuple sample_id, path(bam) from filter_consensus_bam_ch
 
    output:
-    //tuple sample_id, "${sample_id}.sorted_filtered.bam" into sorted_filter_consensus_ch 
-    tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_fastq_ch)
-    //sorted_filter_consensus is queryname sorted  
-
-   publishDir params.output, overwrite: true
-   
-   memory "32G"
+    tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_realignment_ch)
+    
+   publishDir path: params.output, overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
-   SortSam \
-   I=${bam} \
-   O=${sample_id}.sorted_consensus.bam \
-   SORT_ORDER=queryname
+   sambamba sort --tmpdir=./ \
+   --sort-picard \
+   --nthreads ${task.cpus} \
+   --memory-limit ${task.memory.toGiga()-1}GB \
+   --out=${sample_id}.sorted_consensus.bam \
+   ${bam}
    """
  }
 
-process bam_to_fastqs {
-   label 'picard'
-   tag "${sample_id}"
 
-   input:
-    tuple sample_id, path(bam) from sorted_consensus_fastq_ch
-
-   output:
-    tuple sample_id, "${sample_id}.fastq" into consensus_fastq
-  
-   memory "32G"
-
-   script:
-   """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
-   SamToFastq \
-   I=${bam} \
-   FASTQ=${sample_id}.fastq \
-   INTERLEAVE=true
-   """
- }
-
- process realign_consensus {
+process realign_consensus {
    //-p Assume the first input query file is interleaved paired-end FASTA/Q.
    //-Y use soft clipping for supplementary alignment
    //-K process INT input bases in each batch regardless of nThreads (for reproducibility)
@@ -286,7 +279,7 @@ process bam_to_fastqs {
    input:
      file(reference_fasta) from reference_fasta
      file("*") from bwa_realign_ref_index.collect()
-     tuple val(sample_id), file(fastq) from consensus_fastq
+     tuple sample_id, path(bam) from sorted_consensus_realignment_ch
 
    output:
     tuple sample_id, "${sample_id}.realigned.bam" into realign_ch
@@ -296,13 +289,15 @@ process bam_to_fastqs {
 
    script:
    """
+   samtools bam2fq -n ${bam} | \
    bwa mem \
    -R "@RG\\tID:${sample_id}\\tSM:${sample_id}" \
    -K 10000000 \
    -p \
    -Y \
    -t ${task.cpus} \
-   ${reference_fasta} ${fastq} 2> log.txt \
+   ${reference_fasta} \
+   -p - 2> log.txt \
    | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.realigned.bam
    
    samtools index ${sample_id}.realigned.bam
@@ -311,7 +306,7 @@ process bam_to_fastqs {
 
  process sort_realign_bam {
    //  Sort alignment by query name
-   label 'picard'
+   label 'sambamba'
    tag "${sample_id}"
 
    input: 
@@ -319,17 +314,15 @@ process bam_to_fastqs {
 
    output:
     tuple sample_id, "${sample_id}.sorted.bam" into sorted_realign_consensus_ch
-    // sorted_realign_consensus_ch is queryname sorted    
 
-   memory "32G"
-  
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
-   SortSam \
-   I=${bam} \
-   O=${sample_id}.sorted.bam \
-   SORT_ORDER=queryname
+   sambamba sort --tmpdir=./ \
+   --sort-picard \
+   --nthreads ${task.cpus} \
+   --memory-limit ${task.memory.toGiga()-1}GB \
+   --out=${sample_id}.sorted.bam \
+   ${bam}
    """
  }
 
@@ -346,23 +339,25 @@ process bam_to_fastqs {
     tuple sample_id, path(sorted_bam), path(sorted_filtered_bam) from merge_ch
 
    output:
-     tuple val(sample_id), val("final"), file('*.final.bam') into qc_final_bam
-     file('*.bai')
+     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into qc_final_bam
+     
 
    publishDir params.output, overwrite: true
    memory "32G"
 
    script:
    """
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ -Dpicard.useLegacyParser=false\
    MergeBamAlignment \
-   UNMAPPED=${sorted_filtered_bam} \
-   ALIGNED=${sorted_bam} \
-   O=${sample_id}.final.bam \
-   R=${reference_fasta} \
-   VALIDATION_STRINGENCY=SILENT \
-   SORT_ORDER=coordinate
-   CREATE_INDEX=true
+   -UNMAPPED ${sorted_filtered_bam} \
+   -ALIGNED ${sorted_bam} \
+   -O ${sample_id}.final.bam \
+   -R ${reference_fasta} \
+   -VALIDATION_STRINGENCY SILENT \
+   -SORT_ORDER coordinate \
+   -CREATE_INDEX true
+
+   mv ${sample_id}.final.bai ${sample_id}.final.bam.bai
    """
  }
 
@@ -371,11 +366,37 @@ process bam_to_fastqs {
 // Combine channels for quality here
 // into a single quality_ch for processing below.
 
-//qc_consensus_bam,
-//qc_filtered_consensus_bam
+qc_final_bam.mix(
+  qc_standard_bam,
+).into{ hs_metrics_ch; mosdepth_qc_ch; temp_x } 
 
-qc_final_bam.mix(qc_standard_bam)
-            .into{ hs_metrics_ch; mosdepth_qc_ch } 
+temp_x.mix(
+  qc_grpumi_bam,
+  qc_consensus_bam,
+  qc_filtered_consensus_bam
+).map { [it[0], it[1], it[2]] } // excludes bai file which may not be present in stream
+.into { simple_count_qc_ch }
+
+process simple_quality_metrics {
+  label 'sambamba'
+  tag "${sample_id}"
+  
+  cpus 2
+  memory "2GB"
+
+  input:
+    tuple val(sample_id), val(bam_type), file(bam) from simple_count_qc_ch
+  output:
+    file("${sample_id}.${bam_type}.flagstats.txt") into simple_count_out_ch
+
+  script:
+  """
+  sambamba flagstat ${bam} \
+    2> /dev/null \
+    > ${sample_id}.${bam_type}.flagstats.txt
+  """
+
+}
 
 
 process quality_metrics {
@@ -399,21 +420,21 @@ process quality_metrics {
    script:
    """
  
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ -Dpicard.useLegacyParser=false \
    CollectHsMetrics \
-   TARGET_INTERVALS=${picard_targets} \
-   BAIT_INTERVALS=${picard_targets} \
-   COVERAGE_CAP=100000 \
-   REFERENCE_SEQUENCE=${reference_fasta} \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.${bam_type}.hs_metrics 
+   -TARGET_INTERVALS=${picard_targets} \
+   -BAIT_INTERVALS=${picard_baits} \
+   -COVERAGE_CAP=100000 \
+   -REFERENCE_SEQUENCE=${reference_fasta} \
+   -INPUT=${bam} \
+   -OUTPUT=${sample_id}.${bam_type}.hs_metrics 
 
-   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ \
+   picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ -Dpicard.useLegacyParser=false \
    CollectInsertSizeMetrics \
-   INCLUDE_DUPLICATES=true \
-   INPUT=${bam} \
-   OUTPUT=${sample_id}.${bam_type}.insert_size_metrics \
-   HISTOGRAM_FILE=${sample_id}.${bam_type}.insert_size_histogram.pdf
+   -INCLUDE_DUPLICATES true \
+   -INPUT ${bam} \
+   -OUTPUT ${sample_id}.${bam_type}.insert_size_metrics \
+   -H ${sample_id}.${bam_type}.insert_size_histogram.pdf
    """
 }
 
@@ -471,6 +492,7 @@ process multiqc {
   input:
      path('*') from fastqc_report_ch.flatMap().collect()
      path('*') from hs_metrics_out_ch.flatMap().collect()
+     path('*') from simple_count_out_ch.flatMap().collect()
      path('*') from insert_size_metrics_ch.flatMap().collect()
      path('*') from histogram_ch.flatMap().collect()
      path("*") from mosdepth_out_ch.flatMap().collect()
@@ -487,8 +509,10 @@ process multiqc {
 
   script:
   """
+  preprocess_qc.py counts *.flagstats.txt --output qc_counts.${params.run_id}_mqc.csv
+  rm *.flagstats.txt
   multiqc -d --filename "multiqc_report_pre.${params.run_id}.html" .
-  preprocess_qc.py picard multiqc_report_pre.${params.run_id}_data/multiqc_data.json qc_summary.${params.run_id}_mqc.csv
+  preprocess_qc.py summary multiqc_report_pre.${params.run_id}_data/multiqc_data.json qc_summary.${params.run_id}_mqc.csv
   rm -rf multiqc_report_pre.${params.run_id}_data
   multiqc -d -e general_stats --filename "multiqc_report.${params.run_id}.html" .
   """
