@@ -5,14 +5,11 @@ ENV LANG=C.UTF-8
 
 RUN apt-get update \
   && apt-get install -y python3-pip python3-dev git \
-  && cd /usr/local/bin \
-  && ln -s /usr/bin/python3 python \
+  && apt-get clean
+
+WORKDIR /usr/local/bin
+RUN ln -s /usr/bin/python3 python \
   && pip3 install --upgrade pip \
-  apt-get clean
-
-RUN pip install pandas
-
-#RUN pip install multiqc
-RUN pip install git+https://github.com/nkrumm/multiqc.git@fgbio-relative-percent-view
+  && pip install pandas git+https://github.com/nkrumm/multiqc.git@fgbio-relative-percent-view
 
 CMD [ "/bin/bash" ]

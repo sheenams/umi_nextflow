@@ -18,7 +18,6 @@ RUN curl -SL https://sourceforge.net/projects/samtools/files/samtools/${SAMTOOLS
     | tar -xjC /tmp/ \
     && cd /tmp/samtools-$SAMTOOLS_VERSION \
     && make \
-    && make install \
     && mv samtools /usr/bin 
 
 
