@@ -1,10 +1,25 @@
 #!/usr/bin/env nextflow
 
 // Setup the various inputs, defined in nexflow.config
-fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
-                       .view()
+if (params.input_source == "flat_folder") {
+  fastq_pair_ch = Channel.fromFilePairs(params.input_folder + '*{1,2}.fastq.gz', flat: true)
+                         .view()
+                         .into{align_input; fastqc_ch}
+} else {
+  // eg "s3://uwlm-personal/umi_development/fastq/294R/demux-nf-umi/libraries/**/{1,2}.fastq.gz"
+  fastq_pair_ch = Channel.fromPath(params.input_folder + "**/{1,2}.fastq.gz")
+                       .map { path ->
+                          def (fastq, readgroup, library_type, sample_id, rest) = path.toString().tokenize("/").reverse() 
+                          return [sample_id, path]
+                        }
+                       .groupTuple()
+                       .map{ 
+                          // ensure two files present for each sample
+                          key, files -> if (files.size() != 2) error "Samples must each have exactly two FASTQ files." 
+                          return [key, files[0], files[1]]
+                        }
                        .into{align_input; fastqc_ch}
-
+}
 // initialize optional parameters
 params.downsample_reads = null
 params.save_intermediate_output = false
@@ -48,11 +63,12 @@ process bwa {
    // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?, -p using paired end input
    // seqtk sample options:
    // -s seed
+   // -2 -- use a two-pass approach to reduce memory consumption
    if ("downsample_reads" in params)
      """
      seqtk mergepe \
-       <(seqtk sample -s 10000000 ${fastq1} ${params.downsample_reads}) \
-       <(seqtk sample -s 10000000 ${fastq2} ${params.downsample_reads}) \
+       <(seqtk sample -2 -s 10000000 ${fastq1} ${params.downsample_reads}) \
+       <(seqtk sample -2 -s 10000000 ${fastq2} ${params.downsample_reads}) \
      | bwa mem \
        -R'@RG\\tID:${sample_id}\\tSM:${sample_id}' \
        -K 10000000 \
@@ -391,7 +407,6 @@ process quality_metrics {
 
    input:
      file(picard_targets) from picard_targets
-     file(picard_baits) from picard_baits
      file(reference_fasta) from reference_fasta
      file("*") from qc_ref_index.collect()
      tuple val(sample_id), val(bam_type), file(bam), file(bai) from hs_metrics_ch
@@ -409,12 +424,12 @@ process quality_metrics {
  
    picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ -Dpicard.useLegacyParser=false \
    CollectHsMetrics \
-   -TARGET_INTERVALS ${picard_targets} \
-   -BAIT_INTERVALS ${picard_baits} \
-   -COVERAGE_CAP 100000 \
-   -REFERENCE_SEQUENCE ${reference_fasta} \
-   -INPUT ${bam} \
-   -OUTPUT ${sample_id}.${bam_type}.hs_metrics 
+   -TARGET_INTERVALS=${picard_targets} \
+   -BAIT_INTERVALS=${picard_baits} \
+   -COVERAGE_CAP=100000 \
+   -REFERENCE_SEQUENCE=${reference_fasta} \
+   -INPUT=${bam} \
+   -OUTPUT=${sample_id}.${bam_type}.hs_metrics 
 
    picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ -Dpicard.useLegacyParser=false \
    CollectInsertSizeMetrics \
