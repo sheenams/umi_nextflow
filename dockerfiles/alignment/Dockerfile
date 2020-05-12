@@ -35,4 +35,5 @@ ENV SEQTK_VERSION 1.3
 RUN curl -SL https://github.com/lh3/seqtk/archive/v${SEQTK_VERSION}.tar.gz \
     | tar -xzC /tmp/ \
     && cd /tmp/seqtk-${SEQTK_VERSION} \
-    && make
+    && make \
+    && mv /tmp/seqtk-${SEQTK_VERSION}/seqtk /usr/bin
