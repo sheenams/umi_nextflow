@@ -54,7 +54,7 @@ process bwa {
      tuple val(sample_id), file('*.bam') into align_ch
      tuple val(sample_id), val("standard"), file('*.standard.bam'), file('*.bai') into qc_standard_bam
      //"standar" bam is coordinate sorted for use in QC metrics and IGV
-   publishDir params.output, overwrite: true
+   publishDir params.output, mode: 'copy', overwrite: true
 
    cpus 8
    
@@ -136,7 +136,7 @@ process fgbio_setmateinformation{
 
    memory "32G"
 
-   publishDir path: params.output, overwrite: true, enabled: params.save_intermediate_output
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -163,7 +163,7 @@ process fgbio_group_umi {
 
    memory "32G"
 
-   publishDir path: params.output, overwrite: true, enabled: params.save_intermediate_output
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -195,7 +195,7 @@ process fgbio_callconsensus{
 
    memory "32G"
 
-   publishDir path: params.output, overwrite: true, enabled: params.save_intermediate_output
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -229,7 +229,7 @@ process fgbio_filterconsensus{
 
    memory "32G"
 
-   publishDir path: params.output, overwrite: true, enabled: params.save_intermediate_output
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -257,7 +257,7 @@ process sort_filter_bam {
    output:
     tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_realignment_ch)
     
-   publishDir path: params.output, overwrite: true, enabled: params.save_intermediate_output
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -344,7 +344,7 @@ process realign_consensus {
      tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, mpileup_bam)
      
 
-   publishDir params.output, overwrite: true
+   publishDir params.output, mode: 'copy', overwrite: true
    memory "32G"
 
    script:
@@ -377,7 +377,7 @@ temp_x.mix(
   qc_consensus_bam,
   qc_filtered_consensus_bam
 ).map { [it[0], it[1], it[2]] } // excludes bai file which may not be present in stream
-.into { simple_count_qc_ch }
+.set { simple_count_qc_ch } // use 'set' here because "into operator should be used to connect two or more target channels "
 
 process simple_quality_metrics {
   label 'sambamba'
@@ -415,7 +415,7 @@ process quality_metrics {
      path("${sample_id}.${bam_type}.hs_metrics") into hs_metrics_out_ch
      path("${sample_id}.${bam_type}.insert_size_metrics") into insert_size_metrics_ch
 
-   publishDir params.output, overwrite: true
+   publishDir params.output, mode: 'copy', overwrite: true
    
    memory "32G"
 
@@ -479,7 +479,7 @@ process mosdepth {
  
    cpus 4 // per docs, no benefit after 4 threads
  
-   publishDir params.output
+   publishDir params.output, mode: 'copy', overwrite: true
 
    script:
    """
@@ -536,7 +536,7 @@ process mpileup {
   output:
     file("${sample_id}.${bam_type}.mpileup.vcf")
 
-  publishDir params.output, overwrite: true
+  publishDir params.output, mode: 'copy', overwrite: true
 
   memory '4GB'
   cpus '2'
