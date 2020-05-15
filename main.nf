@@ -37,7 +37,8 @@ reference_index = Channel.fromPath(params.ref_index).into {
   picard_ref_index;
   qc_ref_index;
   filter_con_ref_index;
-  mpileup_ref_index
+  mpileup_ref_index;
+  vardict_ref_index
 }
 
 process bwa {
@@ -341,9 +342,8 @@ process realign_consensus {
     tuple sample_id, path(sorted_bam), path(sorted_filtered_bam) from merge_ch
 
    output:
-     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, mpileup_bam)
+     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, mpileup_bam, vardict_bam)
      
-
    publishDir params.output, mode: 'copy', overwrite: true
    memory "32G"
 
@@ -388,6 +388,7 @@ process simple_quality_metrics {
 
   input:
     tuple val(sample_id), val(bam_type), file(bam) from simple_count_qc_ch
+
   output:
     file("${sample_id}.${bam_type}.flagstats.txt") into simple_count_out_ch
 
@@ -520,21 +521,21 @@ process multiqc {
   """
 }
 
-
-////////////////
-// Variant QC //
-////////////////
-
+/////////////////////
+// Variant Calling //
+/////////////////////
 
 process mpileup {
-  label 'bcftools'
+  label 'bwa'
+
   input:
     file(bed) from bed_targets
     file(reference_fasta) from reference_fasta
     file("*") from mpileup_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
     tuple val(sample_id), val(bam_type), file(bam), file(bai) from mpileup_bam
+
   output:
-    file("${sample_id}.${bam_type}.mpileup.vcf")
+    file("${sample_id}.${bam_type}.mpileup")
 
   publishDir params.output, mode: 'copy', overwrite: true
 
@@ -542,26 +543,54 @@ process mpileup {
   cpus '2'
 
   script:
-  // -Q 0: minimum BQ of 0
-  // -d 100000: maximum depth of 100,000
+  //   -A, --count-orphans     do not discard anomalous read pairs                                                                                                
+  //  -B, --no-BAQ            disable BAQ (per-Base Alignment Quality)                                                                                           
+  //  -d, --max-depth INT     max per-file depth; avoids excessive memory usage [8000]                                                                           
+  //  -E, --redo-BAQ          recalculate BAQ on the fly, ignore existing BQs                                                                                    
+  //  -q, --min-MQ INT        skip alignments with mapQ smaller than INT [0]                                                                                     
+  // -Q, --min-BQ INT        skip bases with baseQ/BAQ smaller than INT [13]   
+  // -l, --positions FILE    skip unlisted positions (chr pos) or regions (BED)                                                                                 
   """
-  bcftools mpileup \
-    ${bam} \
-    --fasta-ref ${reference_fasta} \
-    --regions-file ${bed} \
-    -Q 0 \
-    -d 100000 \
-    --annotate FORMAT/AD,INFO/AD \
-    > ${sample_id}.${bam_type}.mpileup.vcf
+  samtools mpileup \
+  --fasta-ref ${reference_fasta} \
+  --max-depth 1000000 \
+  --count-orphans \
+  --redo-BAQ \
+  --positions ${bed} \
+  ${bam}
+  > ${sample_id}.${bam_type}.mpileup
   """
 }
+process vardict {
+  label 'vardict'
 
+  input:
+    file(bed) from bed_targets
+    file(reference_fasta) from reference_fasta
+    file("*") from vardict_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
+    tuple val(sample_id), val(bam_type), file(bam), file(bai) from vardict_bam
 
-/*
-   VarDict \
+  output:
+    file("${sample_id}.${bam_type}.vardict.vcf")
+
+  publishDir params.output, mode: 'copy', overwrite: true
+
+  memory '4GB'
+  cpus '2'
+  // -f double The threshold for allele frequency, default: 0.01 or 1%
+  // -c INT  The column for chromosome
+  // -S INT The column for the region start, e.g. gene start
+  // -E INT The column for the region end, e.g. gene end
+  // -g INT The column for a gene name, or segment annotation 
+  // -F bit The hexical to filter reads. Default: 0x504 (filter unmapped reads, 2nd alignments and duplicates). Use -F 0 to turn it off.
+  // -q double The phred score for a base to be considered a good call. Default: 22.5 (for Illumina). For PGM, set it to ~15, as PGM tends to underestimate base quality.
+  //-r minimum reads The minimum # of variance reads, default: 2
+  // -k 10/1 Indicate whether to perform local realignment. Default: 1 or yes. Set to 0 to disable it.
+
+  script:
+  """
+   vardict \
    -G ${reference_fasta} \
-   -C  \
-   -F 0 \
    -f 0.000000000001 \
    -N ${sample_id} \
    -b ${bam} \
@@ -569,17 +598,17 @@ process mpileup {
    -S 2 \
    -E 3 \
    -g 4 \
+   -F 0 \
    -r 1 \
    -q 1 \
-   -VS SILENT \
-   -th ${task.cpus} \
-   ${bed_file} |
-   teststrandbias.R | 
-   var2vcf_valid.pl \
-   -N ${sample_id} \
-   -f 0.000000000001 \
+   -VS LENIENT \
+   -k 1 \
+   ${bed} \
    > ${sample_id}.vardict.vcf
    """
  }
- 
-*/
+ /*    | VarDict/teststrandbias.R \
+   | VarDict/var2vcf_valid.pl \
+   -N ${sample_id} \
+   -E -f 0.000000000001 
+   */ 
