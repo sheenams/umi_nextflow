@@ -28,6 +28,7 @@ params.save_intermediate_output = false
 picard_targets = file(params.picard_targets)
 picard_baits = file(params.picard_baits)
 bed_targets = file(params.bed_targets)
+bed_targets_chr = file(params.bed_targets_chr)
 
 // Reference genome is used multiple times
 reference_fasta = file(params.ref_fasta)
@@ -402,7 +403,6 @@ process simple_quality_metrics {
 
 }
 
-
 process quality_metrics {
    label 'picard'
    tag "${sample_id}"
@@ -557,7 +557,6 @@ process mpileup {
   --max-depth 1000000 \
   --count-orphans \
   --redo-BAQ \
-  --positions ${bed} \
   ${bam}
   > ${sample_id}.${bam_type}.mpileup
   """
@@ -607,6 +606,7 @@ process vardict {
    -k 1 \
    ${bed} \
   | ${vardict_path}/teststrandbias.R \
+  | ${vardict_path}/var2vcf_valid.pl \
    -N ${sample_id} \
    -E -f 0.00001 \
    > ${sample_id}.${bam_type}.vardict.vcf
@@ -621,7 +621,7 @@ process umivarcal_bam {
     tuple val(sample_id), val(bam_type), file(bam), file(bai) from umivarcal_bam
 
   output:
-    file("${sample_id}.${bam_type}.umivarcal.bam") into umivarcal_ready_bam
+    tuple val(sample_id), val(bam_type), file('*.umivarcal.bam'), file('*.bai') into umivarcal_ready_bam
 
   publishDir params.output, mode: 'copy', overwrite: true
 
@@ -633,6 +633,9 @@ process umivarcal_bam {
   samtools view -h ${bam} \
   | awk '{ if(\$0 ~ "^@") {print \$0} else {split(\$23,a,":"); split(\$1,b,":");gsub(/RG:Z:[^\t]*/, "RG:Z:"b[1]"_"a[3]); print} }' \
   | samtools view -b -o ${sample_id}.${bam_type}.umivarcal.bam
+
+  samtools index ${sample_id}.${bam_type}.umivarcal.bam
+
   """
 }
 // Run UMI Varcal
@@ -641,7 +644,7 @@ process umivarcal{
   label "umivarcal" 
 
   input:
-    file(bed) from bed_targets
+    file(bed) from bed_targets_chr
     file(reference_fasta) from reference_fasta
     file("*") from umivarcal_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
     tuple val(sample_id), val(bam_type), file(bam), file(bai) from umivarcal_ready_bam
@@ -656,17 +659,17 @@ process umivarcal{
   // Copy the UMI from the RX:Z tag (column 23)
   script:                                                                               
   """
-  python3 umi-varcal.py call \
-  --fasta=${reference_fasta} \
-  --bed=${bed} \
-  --input=${bam} \
-  --output=${sample_id} \
-  --cores=${task.cpus} \
-  --min_base_quality=10 \
-  --min_read_quality=20 \
-  --min_mapping_quality=20 \
-  --min_variant_umi=2 \
-  --alpha=0.05
+  python3 /home/umi-varcal/umi-varcal.py call \
+  --fasta ${reference_fasta} \
+  --bed ${bed} \
+  --input ${bam} \
+  --output ${sample_id}.${bam_type} \
+  --cores ${task.cpus} \
+  --min_base_quality 10 \
+  --min_read_quality 20 \
+  --min_mapping_quality 20 \
+  --min_variant_umi 2 \
+  --alpha 0.05
   """
 }
 
