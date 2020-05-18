@@ -38,7 +38,8 @@ reference_index = Channel.fromPath(params.ref_index).into {
   qc_ref_index;
   filter_con_ref_index;
   mpileup_ref_index;
-  vardict_ref_index
+  vardict_ref_index;
+  umivarcal_ref_index
 }
 
 process bwa {
@@ -342,7 +343,7 @@ process realign_consensus {
     tuple sample_id, path(sorted_bam), path(sorted_filtered_bam) from merge_ch
 
    output:
-     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, mpileup_bam, vardict_bam)
+     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, mpileup_bam, vardict_bam, umivarcal_bam)
      
    publishDir params.output, mode: 'copy', overwrite: true
    memory "32G"
@@ -588,10 +589,11 @@ process vardict {
   // -k 10/1 Indicate whether to perform local realignment. Default: 1 or yes. Set to 0 to disable it.
 
   script:
+  vardict_path = "/usr/local/share/vardict-java-1.7.0-0/bin"
   """
-   vardict \
+   ${vardict_path}/vardict-java \
    -G ${reference_fasta} \
-   -f 0.000000000001 \
+   -f 0.00001 \
    -N ${sample_id} \
    -b ${bam} \
    -c 1 \
@@ -604,11 +606,68 @@ process vardict {
    -VS LENIENT \
    -k 1 \
    ${bed} \
-   > ${sample_id}.vardict.vcf
+  | ${vardict_path}/teststrandbias.R \
+   -N ${sample_id} \
+   -E -f 0.00001 \
+   > ${sample_id}.${bam_type}.vardict.vcf
    """
  }
- /*    | VarDict/teststrandbias.R \
-   | VarDict/var2vcf_valid.pl \
-   -N ${sample_id} \
-   -E -f 0.000000000001 
-   */ 
+
+// Edit RG on bam to have UMI in it
+process umivarcal_bam {
+  label 'bwa'
+
+  input:
+    tuple val(sample_id), val(bam_type), file(bam), file(bai) from umivarcal_bam
+
+  output:
+    file("${sample_id}.${bam_type}.umivarcal.bam") into umivarcal_ready_bam
+
+  publishDir params.output, mode: 'copy', overwrite: true
+
+  memory '4GB'
+  cpus '2'
+  // Copy the UMI from the RX:Z tag (column 23)
+  script:                                                                               
+  """
+  samtools view -h ${bam} \
+  | awk '{ if(\$0 ~ "^@") {print \$0} else {split(\$23,a,":"); split(\$1,b,":");gsub(/RG:Z:[^\t]*/, "RG:Z:"b[1]"_"a[3]); print} }' \
+  | samtools view -b -o ${sample_id}.${bam_type}.umivarcal.bam
+  """
+}
+// Run UMI Varcal
+
+process umivarcal{
+  label "umivarcal" 
+
+  input:
+    file(bed) from bed_targets
+    file(reference_fasta) from reference_fasta
+    file("*") from umivarcal_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
+    tuple val(sample_id), val(bam_type), file(bam), file(bai) from umivarcal_ready_bam
+
+  output:
+    file("${sample_id}.${bam_type}.vcf")
+
+  publishDir params.output, mode: 'copy', overwrite: true
+
+  memory '4GB'
+  cpus '2'
+  // Copy the UMI from the RX:Z tag (column 23)
+  script:                                                                               
+  """
+  python3 umi-varcal.py call \
+  --fasta=${reference_fasta} \
+  --bed=${bed} \
+  --input=${bam} \
+  --output=${sample_id} \
+  --cores=${task.cpus} \
+  --min_base_quality=10 \
+  --min_read_quality=20 \
+  --min_mapping_quality=20 \
+  --min_variant_umi=2 \
+  --alpha=0.05
+  """
+}
+
+
