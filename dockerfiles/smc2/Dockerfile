@@ -6,7 +6,7 @@ FROM biocontainers/biocontainers:v1.1.0_cv1
 ################ Create appropriate directory structure for code to run ################
 USER root
 RUN mkdir -p /srv/qgen/code && \
-    mkdir -p /srv/qgen/bin/downloads
+    mkdir -p /srv/qgen/bin/downloads 
 
 ################ Update package repository and install dependencies using apt-get ################
 RUN apt-get -y update && \
@@ -27,6 +27,7 @@ RUN Rscript -e "install.packages(c('plyr','tidyverse','magrittr','data.table'))"
 
 ################ Install source code ################
 ADD smc2-af0bd7.tar.gz /srv/qgen/code/
+ADD data.tar.gz /srv/qgen/data/
 
 ################ Update Environment Variables ################
 ENV PYTHONPATH $PYTHONPATH:/opt/conda/lib/python2.7/site-packages/:/srv/qgen/code/smc2-af0bd7/
