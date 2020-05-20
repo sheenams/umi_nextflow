@@ -40,6 +40,10 @@ reference_index = Channel.fromPath(params.ref_index).into {
   filter_con_ref_index;
   mpileup_ref_index;
   vardict_ref_index;
+  smc2_ref_index
+}
+reference_fasta_chr = file(params.ref_fasta_chr)
+reference_index_chr = Channel.fromPath(params.ref_index_chr).set { 
   umivarcal_ref_index
 }
 
@@ -344,7 +348,7 @@ process realign_consensus {
     tuple sample_id, path(sorted_bam), path(sorted_filtered_bam) from merge_ch
 
    output:
-     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, mpileup_bam, vardict_bam, umivarcal_bam)
+     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, mpileup_bam, vardict_bam, umivarcal_bam, smc2_bam)
      
    publishDir params.output, mode: 'copy', overwrite: true
    memory "32G"
@@ -627,25 +631,26 @@ process umivarcal_bam {
 
   memory '4GB'
   cpus '2'
-  // Copy the UMI from the RX:Z tag (column 23)
+  // Copy the UMI from the RX:Z  (column 23)
+  // Add 'chr' to the header and to each line, required by umi-varcal
   script:                                                                               
   """
   samtools view -h ${bam} \
-  | awk '{ if(\$0 ~ "^@") {print \$0} else {split(\$23,a,":"); split(\$1,b,":");gsub(/RG:Z:[^\t]*/, "RG:Z:"b[1]"_"a[3]); print} }' \
-  | samtools view -b -o ${sample_id}.${bam_type}.umivarcal.bam
-
+  | awk -F \$'\t' 'BEGIN {OFS = FS} { if(\$0 ~ "^@") {split(\$2,a,":");gsub(/SN:[^\t]*/, "SN:chr"a[2]); print} else if (\$3 != "*") {split(\$23,a,":"); split(\$1,b,":");gsub(/RG:Z:[^\t]*/, "RG:Z:"b[1]"_"a[3]);sub("^", "chr",\$3); print} }' \
+  | samtools view -b - -o ${sample_id}.${bam_type}.umivarcal.bam
+  
   samtools index ${sample_id}.${bam_type}.umivarcal.bam
-
+  
   """
 }
-// Run UMI Varcal
 
+// Run UMI Varcal
 process umivarcal{
   label "umivarcal" 
 
   input:
     file(bed) from bed_targets_chr
-    file(reference_fasta) from reference_fasta
+    file(reference_fasta_chr) from reference_fasta_chr
     file("*") from umivarcal_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
     tuple val(sample_id), val(bam_type), file(bam), file(bai) from umivarcal_ready_bam
 
@@ -660,7 +665,7 @@ process umivarcal{
   script:                                                                               
   """
   python3 /home/umi-varcal/umi-varcal.py call \
-  --fasta ${reference_fasta} \
+  --fasta ${reference_fasta_chr} \
   --bed ${bed} \
   --input ${bam} \
   --output ${sample_id}.${bam_type} \
@@ -674,3 +679,36 @@ process umivarcal{
 }
 
 
+process smc2{
+  label "smc2" 
+
+  input:
+    file(bed) from bed_targets
+    file(reference_fasta) from reference_fasta
+    file("*") from smc2_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
+    tuple val(sample_id), val(bam_type), file(bam), file(bai) from smc2_bam
+
+  output:
+    file("${sample_id}.${bam_type}.smCounter.cut.vcf")
+
+  publishDir params.output, mode: 'copy', overwrite: true
+
+  memory '4GB'
+  cpus '2'
+  script:  
+  """
+  python /srv/qgen/code/smc2-af0bd7/run.py \
+  --bedTarget ${bed} \
+  --bamFile ${bam} \
+  --outPrefix ${sample_id}.${bam_type} \
+  --nCPU ${task.cpus} \
+  --minBQ 10 \
+  --minMQ 10 \
+  --refGenome ${reference_fasta} \
+  --bamType consensus \
+  --repBed /srv/qgen/data/annotation/SR_LC_SL.full.bed \
+  --srBed /srv/qgen/data/annotation/simpleRepeat.full.bed \
+  --umiTag RX \
+  --hpLen 8 --mismatchThr 6.0 --primerDist 2 --primerSide 1 --minAltUMI 3 --maxAltAllele 2 
+  """
+}
