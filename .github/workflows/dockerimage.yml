@@ -2,7 +2,7 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ 016-variant-callers ]
+    branches: [ master ]
   pull_request:
     branches: [ master ]
 
