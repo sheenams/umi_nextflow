@@ -413,6 +413,7 @@ process quality_metrics {
 
    input:
      file(picard_targets) from picard_targets
+     file(picard_baits) from picard_baits
      file(reference_fasta) from reference_fasta
      file("*") from qc_ref_index.collect()
      tuple val(sample_id), val(bam_type), file(bam), file(bai) from hs_metrics_ch
