@@ -697,6 +697,7 @@ process smc2{
 
   memory '4GB'
   cpus '2'
+  //Some input files are in the docker image, packaged with program
   script:  
   """
   python /srv/qgen/code/smc2-af0bd7/run.py \
