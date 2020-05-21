@@ -656,6 +656,8 @@ process umivarcal{
 
   output:
     file("${sample_id}.${bam_type}.vcf")
+    file("${sample_id}.${bam_type}.gvcf")
+    file("${sample_id}.${bam_type}.variants")
 
   publishDir params.output, mode: 'copy', overwrite: true
 
@@ -670,11 +672,11 @@ process umivarcal{
   --input ${bam} \
   --output ${sample_id}.${bam_type} \
   --cores ${task.cpus} \
-  --min_base_quality 10 \
-  --min_read_quality 20 \
-  --min_mapping_quality 20 \
+  --min_base_quality 1 \
+  --min_read_quality 1 \
+  --min_mapping_quality 1 \
   --min_variant_umi 2 \
-  --alpha 0.05
+  --gvcf True
   """
 }
 
