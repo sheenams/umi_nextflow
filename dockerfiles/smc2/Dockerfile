@@ -27,7 +27,7 @@ RUN Rscript -e "install.packages(c('plyr','tidyverse','magrittr','data.table'))"
 
 ################ Install source code ################
 ADD smc2-af0bd7.tar.gz /srv/qgen/code/
-ADD data.tar.gz /srv/qgen/data/
+ADD data.tar.gz /srv/qgen/
 
 ################ Update Environment Variables ################
 ENV PYTHONPATH $PYTHONPATH:/opt/conda/lib/python2.7/site-packages/:/srv/qgen/code/smc2-af0bd7/
