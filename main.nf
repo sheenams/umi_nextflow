@@ -617,7 +617,6 @@ process vardict {
    """
  }
 
-// Edit RG on bam to have UMI in it
 process umivarcal_bam {
   label 'bwa'
 
@@ -631,8 +630,9 @@ process umivarcal_bam {
 
   memory '4GB'
   cpus '2'
-  // Copy the UMI from the RX:Z  (column 23)
+  // Copy the UMI from the RX:Z  into the read name in field 1
   // Add 'chr' to the header and to each line, required by umi-varcal
+  // May require removing GL chromosomes due to samtools naming issue, still testing that
   script:                                                                               
   """
   samtools view -h ${bam} \
@@ -663,6 +663,7 @@ process umivarcal{
   cpus '2'
   //This program is extremely unstable 
   errorStrategy 'ignore'
+
   script:                                                                               
   """
   python3 /home/umi-varcal/umi-varcal.py call \
