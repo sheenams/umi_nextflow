@@ -277,7 +277,6 @@ process sort_filter_bam {
    """
  }
 
-
 process realign_consensus {
    //-p Assume the first input query file is interleaved paired-end FASTA/Q.
    //-Y use soft clipping for supplementary alignment
@@ -626,7 +625,7 @@ process umivarcal_bam {
     tuple val(sample_id), val(bam_type), file(bam), file(bai) from umivarcal_bam
 
   output:
-    tuple val(sample_id), val(bam_type), file('*.umivarcal.bam'), file('*.bai') into umivarcal_ready_bam
+    tuple val(sample_id), val(bam_type), file('*.umivarcal.sam') into umivarcal_ready_sam
 
   publishDir params.output, mode: 'copy', overwrite: true
 
@@ -637,10 +636,7 @@ process umivarcal_bam {
   script:                                                                               
   """
   samtools view -h ${bam} \
-  | awk -F \$'\t' 'BEGIN {OFS = FS} { if(\$0 ~ "^@") {split(\$2,a,":");gsub(/SN:[^\t]*/, "SN:chr"a[2]); print} else if (\$3 != "*") {split(\$23,a,":"); split(\$1,b,":");gsub(/RG:Z:[^\t]*/, "RG:Z:"b[1]"_"a[3]);sub("^", "chr",\$3); print} }' \
-  | samtools view -b - -o ${sample_id}.${bam_type}.umivarcal.bam
-  
-  samtools index ${sample_id}.${bam_type}.umivarcal.bam
+  | awk -F \$'\t' 'BEGIN {OFS = FS} { if(\$0 ~ "^@") {split(\$2,a,":");gsub(/SN:[^\t]*/, "SN:chr"a[2]); print} else if (\$3 != "*") {;split(\$23,a,":"); gsub(\$1,\$1"_"a[3]); sub("^", "chr",\$3); print} }' > ${sample_id}.${bam_type}.umivarcal.sam
   
   """
 }
@@ -653,31 +649,34 @@ process umivarcal{
     file(bed) from bed_targets_chr
     file(reference_fasta_chr) from reference_fasta_chr
     file("*") from umivarcal_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
-    tuple val(sample_id), val(bam_type), file(bam), file(bai) from umivarcal_ready_bam
+    tuple val(sample_id), val(bam_type), file(sam) from umivarcal_ready_sam
 
   output:
-    file("${sample_id}.${bam_type}.vcf")
-    file("${sample_id}.${bam_type}.gvcf")
-    file("${sample_id}.${bam_type}.variants")
+    file("${sample_id}.${bam_type}.umivarcal.vcf")
+    file("${sample_id}.${bam_type}.umivarcal.gvcf")
+    file("${sample_id}.${bam_type}.umivarcal.variants")
+
 
   publishDir params.output, mode: 'copy', overwrite: true
 
   memory '4GB'
   cpus '2'
-  // Copy the UMI from the RX:Z tag (column 23)
+  //This program is extremely unstable 
+  errorStrategy 'ignore'
   script:                                                                               
   """
   python3 /home/umi-varcal/umi-varcal.py call \
   --fasta ${reference_fasta_chr} \
   --bed ${bed} \
-  --input ${bam} \
-  --output ${sample_id}.${bam_type} \
+  --input ${sam} \
+  --output ${sample_id}.${bam_type}.umivarcal \
   --cores ${task.cpus} \
   --min_base_quality 1 \
   --min_read_quality 1 \
   --min_mapping_quality 1 \
-  --min_variant_umi 2 \
-  --gvcf True
+  --min_variant_umi 1 \
+  --gvcf True \
+  --alpha 0.9 
   """
 }
 
