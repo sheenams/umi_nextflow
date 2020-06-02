@@ -12,9 +12,9 @@ from datetime import datetime
 BASES = ['A', 'C', 'G', 'T']
 
 def build_parser(parser):
-    parser.add_argument('readcounts',
-        help='Output from VarScan readcounts')
-    parser.add_argument('outpath',
+    parser.add_argument('readcounts', nargs='+',
+        help='Output from mpileup2readcounts')
+    parser.add_argument('-o', '--outpath',
         help='Path prefix for output files')
     parser.add_argument('-l', '--label', default='errors',
         help='Label for chart titles')
@@ -67,7 +67,7 @@ def readcounts_to_dataframe(readcounts):
     print(datetime.now(), "dataframe constructed")
     return df
 
-def create_vaf_histogram(df, title, outpath):
+def create_vaf_histogram(df, title, axis):
     vaf_list = []
     for ref in BASES:
         ref_df = df[df['ref'] == ref]
@@ -76,12 +76,10 @@ def create_vaf_histogram(df, title, outpath):
             vaf_list.append(var_df[var + '_freq'].ravel())
 
     vafs = np.concatenate(vaf_list)
-    fig, ax = plt.subplots()
-    ax.hist(vafs, bins=np.arange(0, 1.001, 0.005), log=True)
-    ax.set_title(title)
-    ax.set_xlabel('non-reference read franction')
-    fig.tight_layout()
-    fig.savefig(outpath + '.png')
+    axis.hist(vafs, bins=np.arange(0, 1.001, 0.005), log=True)
+    axis.set_title(title)
+    axis.set_xlabel('non-reference read franction')
+
 
 def create_error_heatmap(df, title, outpath):
     error_rates = pd.DataFrame(columns=BASES, index=pd.Series(BASES, name='ref'))
@@ -113,7 +111,7 @@ def create_error_heatmap(df, title, outpath):
 
     for i in range(len(ref_bases)):
         for j in range(len(var_bases)):
-            value = round(log_matrix[i, j], 2)
+            value = round(error_rates.iloc[i, j], 5)
             text = ax.text(j, i, value, ha="center", va="center", color="black")
 
     fig.tight_layout()
@@ -126,12 +124,23 @@ if __name__ == '__main__':
     build_parser(parser)
     args = parser.parse_args()
 
-    # convert the readcounts file to a dataframe
-    df = readcounts_to_dataframe(args.readcounts)
-    # df = VARSCAN_readcounts_to_dataframe(args.readcounts)
+    num_files = len(args.readcounts)
+    fig, axs = plt.subplots(1, num_files, sharey='row')
 
-    # create histogram of non-reference VAFs
-    create_vaf_histogram(df, args.label, args.outpath + '.VAFs')
+    try:
+        for rc, ax in zip(args.readcounts, list(axs)):
+            # convert the readcounts file to a dataframe
+            df = readcounts_to_dataframe(rc)
+            # df = VARSCAN_readcounts_to_dataframe(args.readcounts)
+            # create histogram of non-reference VAFs
+            create_vaf_histogram(df, args.label, ax)
+    except TypeError:
+        df = readcounts_to_dataframe(args.readcounts[0])
+        create_vaf_histogram(df, args.label, axs)
+    
+    fig.tight_layout()
+    fig.savefig(args.outpath + '.VAFs.png')
+
     create_error_heatmap(df, args.label, args.outpath + '.error_rates')
 
     print(datetime.now(), 'error rates calculated')
