@@ -53,7 +53,7 @@ process bwa {
  
    output:
      tuple val(sample_id), file('*.bam') into align_ch
-     tuple val(sample_id), val("standard"), file('*.standard.bam'), file('*.bai') into qc_standard_bam
+     tuple val(sample_id), val("standard"), file('*.standard.bam'), file('*.bai') into (qc_standard_bam, standard_pileup_bams)
      //"standar" bam is coordinate sorted for use in QC metrics and IGV
    publishDir params.output, mode: 'copy', overwrite: true
 
@@ -127,6 +127,7 @@ process fgbio_setmateinformation{
   // and that the mate reference and mate start position are correct.
    label "fgbio"
    tag "${sample_id}"
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    input: 
     tuple sample_id, path(bam) from set_mate_ch
@@ -134,10 +135,6 @@ process fgbio_setmateinformation{
    output:
     tuple sample_id, "${sample_id}.mateinfo.bam" into mate_info_bam_ch
     tuple val(sample_id), val("set_mate"), file('*.bam') into temp_qc_mate_bam
-
-   memory "32G"
-
-   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -152,6 +149,7 @@ process fgbio_group_umi {
    // Groups reads together that appear to have come from the same original molecule.
    label "fgbio"
    tag "${sample_id}"
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    input: 
     tuple sample_id, path(bam) from mate_info_bam_ch
@@ -160,11 +158,6 @@ process fgbio_group_umi {
      tuple val(sample_id), file('*.grpumi.bam') into grp_umi_bam_ch
      tuple val(sample_id), val("grpumi"), file('*.grpumi.bam') into qc_grpumi_bam
      file('*.grpumi.histogram') into histogram_ch
-
-
-   memory "32G"
-
-   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -185,18 +178,15 @@ process fgbio_callconsensus{
    //   calls each end of a pair independently, and does not jointly call bases that overlap within a pair. Insertion or deletion
    //   errors in the reads are not considered in the consensus model.integrating the unique molecular tags
    label 'fgbio'
-   tag "${sample_id}"
+   tag "${sample_id}" 
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    input: 
     tuple sample_id, path(bam) from grp_umi_bam_ch
 
    output:
      tuple val(sample_id), file('*.consensus.bam') into consensus_bam_ch
-     tuple val(sample_id), val("consensus"), file('*.consensus.bam') into qc_consensus_bam
-
-   memory "32G"
-
-   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
+     tuple val(sample_id), val("consensus"), file('*.consensus.bam') into (qc_consensus_bam, sort_consensus_bam_ch)
 
    script:
    """
@@ -218,6 +208,7 @@ process fgbio_callconsensus{
 process fgbio_filterconsensus{
    label "fgbio"
    tag "${sample_id}"
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    input: 
      file(reference_fasta) from reference_fasta
@@ -227,10 +218,6 @@ process fgbio_filterconsensus{
    output:
      tuple val(sample_id), file('*.filtered_consensus.bam') into filter_consensus_bam_ch
      tuple val(sample_id), val("filtered_consensus"), file('*.filtered_consensus.bam') into qc_filtered_consensus_bam
-
-   memory "32G"
-
-   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -335,6 +322,7 @@ process realign_consensus {
   //Merge consensus bam (unaligned) with aligned bam, which is queryname sorted
    label 'picard'
    tag "${sample_id}"
+   publishDir params.output, mode: 'copy', overwrite: true
 
    input:
     file(reference_fasta) from reference_fasta
@@ -342,10 +330,7 @@ process realign_consensus {
     tuple sample_id, path(sorted_bam), path(sorted_filtered_bam) from merge_ch
 
    output:
-     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, mpileup_bam, vardict_bam)
-     
-   publishDir params.output, mode: 'copy', overwrite: true
-   memory "32G"
+     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, final_pileup_bams, vardict_bam)
 
    script:
    """
@@ -362,6 +347,26 @@ process realign_consensus {
    mv ${sample_id}.final.bai ${sample_id}.final.bam.bai
    """
  }
+
+process sort_and_index_consensus_bam {
+   //  Sort alignment by position and index
+   label 'bwa'
+   tag "${sample_id}"
+
+   input: 
+     tuple val(sample_id), val(bam_type), file(bam) from sort_consensus_bam_ch
+
+   output:
+     tuple val(sample_id), val(bam_type), file("*.${bam_type}.bam"), file("*.bai") into consensus_pileup_bams
+
+   script:
+   """
+   samtools sort -t${task.cpus} -m4G - -o ${sample_id}.${bam_type}.bam ${bam}
+     
+   samtools index ${sample_id}.${bam_type}.bam
+   """
+ }
+
 
 // ######### QC ######### //
 
@@ -417,8 +422,6 @@ process quality_metrics {
      path("${sample_id}.${bam_type}.insert_size_metrics") into insert_size_metrics_ch
 
    publishDir params.output, mode: 'copy', overwrite: true
-   
-   memory "32G"
 
    script:
    """
@@ -525,22 +528,26 @@ process multiqc {
 // Variant Calling //
 /////////////////////
 
+standard_pileup_bams.mix(consensus_pileup_bams, final_pileup_bams)
+  .set { pileup_bams }
+
+Channel.from(5, 25).combine(pileup_bams).set { pileup_bams }
+
 process mpileup {
   label 'bwa'
+  tag "${sample_id}-${bam_type}-mapQ${min_mapQ}"
+  publishDir params.output, mode: 'copy', overwrite: true
+  memory '4GB'
+  cpus '2'
 
   input:
     file(bed) from bed_targets
     file(reference_fasta) from reference_fasta
     file("*") from mpileup_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
-    tuple val(sample_id), val(bam_type), file(bam), file(bai) from mpileup_bam
+    tuple val(min_mapQ), val(sample_id), val(bam_type), file(bam), file(bai) from pileup_bams
 
   output:
-    file("${sample_id}.${bam_type}.mpileup")
-
-  publishDir params.output, mode: 'copy', overwrite: true
-
-  memory '4GB'
-  cpus '2'
+    tuple val(min_mapQ), val(sample_id), val(bam_type), file("${sample_id}.${bam_type}.mapQ${min_mapQ}.mpileup") into mpileup_to_readcounts
 
   script:
   //   -A, --count-orphans     do not discard anomalous read pairs                                                                                                
@@ -558,8 +565,81 @@ process mpileup {
   --max-depth 1000000 \
   --count-orphans \
   --redo-BAQ \
+  --output-MQ \
+  --min-MQ ${min_mapQ} \
   --positions ${bed} \
-  ${bam}
-  > ${sample_id}.${bam_type}.mpileup
+  ${bam} \
+  > ${sample_id}.${bam_type}.mapQ${min_mapQ}.mpileup \
+  2> log.txt
+  """
+}
+
+// process readcounts {
+//   label 'varscan'
+//   publishDir params.output, mode: 'copy', overwrite: true
+
+//   input:
+//     tuple val(sample_id), file(mpileup) from mpileup_to_readcounts
+
+//   output:
+//     tuple val(sample_id), file("${sample_id}.readcounts.tsv") into readcounts_to_plots
+
+//   script:
+//   """
+//   java -Xmx${task.memory.toGiga()}g \
+//   -jar /opt/VarScan.jar readcounts \
+//   ${mpileup} \
+//   --min-base-qual 0 \
+//   --output-file ${sample_id}.readcounts.tsv
+//   """
+// }
+
+process readcounts {
+  label 'plotting'
+  tag "${sample_id}-${bam_type}-mapQ${min_mapQ}"
+  memory '2GB'
+  publishDir params.output, mode: 'copy', overwrite: true
+
+  input:
+    tuple val(min_mapQ), val(sample_id), val(bam_type), file(mpileup) from mpileup_to_readcounts
+
+  output:
+    tuple val(min_mapQ), val(sample_id), val(bam_type), file("${sample_id}.${bam_type}.mapQ${min_mapQ}.readcounts.tsv") into readcounts_output
+
+  script:
+  """
+  cat ${mpileup} \
+  | ${baseDir}/bin/mpileup2readcounts \
+  0 \
+  -5 \
+  true \
+  0 \
+  0 \
+  > ${sample_id}.${bam_type}.mapQ${min_mapQ}.readcounts.tsv \
+  2> log.txt
+  """
+}
+
+// group readcounts_output by mapQ and sample_id 
+
+process plot_errors {
+  label 'plotting'
+  tag "${sample_id}-${bam_type}-mapQ${min_mapQ}"
+  memory '2GB'
+  publishDir params.output, mode: 'copy', overwrite: true
+
+  input:
+    tuple val(min_mapQ), val(sample_id), val(bam_type), file(readcounts) from readcounts_output
+
+  output:
+    tuple val(min_mapQ), val(sample_id), file("*.{png,tsv}")
+
+  script:
+  """
+  ${baseDir}/bin/visualize_error.py \
+  -l ${sample_id}.${bam_type}.mapQ${min_mapQ} \
+  -o  ${sample_id}.${bam_type}.mapQ${min_mapQ} \
+  ${readcounts} \
+  2> log.txt
   """
 }
