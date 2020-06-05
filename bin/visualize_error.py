@@ -9,6 +9,8 @@ import pandas as pd
 import numpy as np
 
 BASES = ['A', 'C', 'G', 'T']
+COLORBAR_LABELS = [0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0]
+COLORBAR_TICKS = np.log10(COLORBAR_LABELS)
 
 def build_parser(parser):
     parser.add_argument('readcounts', nargs='+',
@@ -96,7 +98,7 @@ def create_error_heatmap(df, title, axis):
     
     # plot heatmap of log-adjusted errors for better contrast
     log_matrix = np.log10(error_rates.to_numpy(dtype=np.float64))
-    axis.imshow(log_matrix, cmap='cool')
+    im = axis.imshow(log_matrix, cmap='cool', vmin=COLORBAR_TICKS[0], vmax=COLORBAR_TICKS[-1])
 
     # add axis ticks and labels
     ref_bases = error_rates.index
@@ -116,6 +118,8 @@ def create_error_heatmap(df, title, axis):
         for j in range(len(var_bases)):
             value = round(error_rates.iloc[i, j], 5)
             text = axis.text(j, i, value, ha="center", va="center", color="black")
+
+    return im
 
 if __name__ == '__main__':
     # parse the args
@@ -141,17 +145,24 @@ if __name__ == '__main__':
             # create histogram of non-reference VAFs
             create_vaf_histogram(df, l, hist_ax)
             # create heatmap of base conversion rates
-            create_error_heatmap(df, l, heat_ax)
+            im = create_error_heatmap(df, l, heat_ax)
 
     # if only one readcounts file is provided    
     except TypeError:
         df = readcounts_to_dataframe(args.readcounts[0])
         l = labels[0]
         create_vaf_histogram(df, l, hist_axs)
-        create_error_heatmap(df, l, heat_axs)
-    
+        im = create_error_heatmap(df, l, heat_axs)
+
+    # save histogram(s)    
     hist_fig.tight_layout()
     hist_fig.savefig(args.outpath + '.VAFs.png')
 
+    # add color scale
     heat_fig.tight_layout()
+    heat_fig.subplots_adjust(right=0.8)
+    cbar_ax = heat_fig.add_axes([0.85, 0.2, 0.05, 0.6])
+    heat_fig.colorbar(im, cax=cbar_ax, ticks=COLORBAR_TICKS)
+    cbar_ax.set_yticklabels(COLORBAR_LABELS)
+    # save heatmap(s)
     heat_fig.savefig(args.outpath + '.error_rates.png')
