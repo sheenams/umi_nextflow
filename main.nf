@@ -27,6 +27,7 @@ params.save_intermediate_output = false
 // Assay specific files
 picard_targets = file(params.picard_targets)
 picard_baits = file(params.picard_baits)
+bed_baits = file(params.bed_baits)
 bed_targets = file(params.bed_targets)
 
 // Reference genome is used multiple times
@@ -352,18 +353,19 @@ process sort_and_index_consensus_bam {
    //  Sort alignment by position and index
    label 'bwa'
    tag "${sample_id}"
+   publishDir params.output, mode: 'copy', overwrite: true
 
    input: 
      tuple val(sample_id), val(bam_type), file(bam) from sort_consensus_bam_ch
 
    output:
-     tuple val(sample_id), val(bam_type), file("*.${bam_type}.bam"), file("*.bai") into consensus_pileup_bams
+     tuple val(sample_id), val(bam_type), file("*.${bam_type}.sorted.bam"), file("*.bai") into consensus_pileup_bams
 
    script:
    """
-   samtools sort -t${task.cpus} -m4G - -o ${sample_id}.${bam_type}.bam ${bam}
+   cat ${bam} | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.${bam_type}.sorted.bam  2>log.txt
      
-   samtools index ${sample_id}.${bam_type}.bam
+   samtools index ${sample_id}.${bam_type}.sorted.bam
    """
  }
 
@@ -409,7 +411,7 @@ process simple_quality_metrics {
 
 process quality_metrics {
    label 'picard'
-   tag "${sample_id}"
+   tag "${sample_id}-${bam_type}"
 
    input:
      file(picard_targets) from picard_targets
@@ -473,7 +475,7 @@ process mosdepth {
    tag "${sample_id}"
 
    input:
-      file(bed) from bed_targets
+      file(bed) from bed_baits
       tuple val(sample_id), val(bam_type), file(bam), file(bai) from mosdepth_qc_ch
    output:
       file "${sample_id}.${bam_type}.regions.bed.gz"
@@ -528,14 +530,14 @@ process multiqc {
 // Variant Calling //
 /////////////////////
 
-standard_pileup_bams.mix(consensus_pileup_bams, final_pileup_bams)
+standard_pileup_bams.mix(final_pileup_bams)
   .set { pileup_bams }
 
-Channel.from(5, 25).combine(pileup_bams).set { pileup_bams }
+// Channel.from(1, 25).combine(pileup_bams).set { pileup_bams }
 
 process mpileup {
   label 'bwa'
-  tag "${sample_id}-${bam_type}-mapQ${min_mapQ}"
+  tag "${sample_id}-${bam_type}"
   publishDir params.output, mode: 'copy', overwrite: true
   memory '4GB'
   cpus '2'
@@ -544,10 +546,10 @@ process mpileup {
     file(bed) from bed_targets
     file(reference_fasta) from reference_fasta
     file("*") from mpileup_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
-    tuple val(min_mapQ), val(sample_id), val(bam_type), file(bam), file(bai) from pileup_bams
+    tuple val(sample_id), val(bam_type), file(bam), file(bai) from pileup_bams
 
   output:
-    tuple val(min_mapQ), val(sample_id), val(bam_type), file("${sample_id}.${bam_type}.mapQ${min_mapQ}.mpileup") into mpileup_to_readcounts
+    tuple val(sample_id), val(bam_type), file("${sample_id}.${bam_type}.mpileup") into mpileup_to_readcounts
 
   script:
   //   -A, --count-orphans     do not discard anomalous read pairs                                                                                                
@@ -566,10 +568,10 @@ process mpileup {
   --count-orphans \
   --redo-BAQ \
   --output-MQ \
-  --min-MQ ${min_mapQ} \
+  --min-MQ 20 \
   --positions ${bed} \
   ${bam} \
-  > ${sample_id}.${bam_type}.mapQ${min_mapQ}.mpileup \
+  > ${sample_id}.${bam_type}.mpileup \
   2> log.txt
   """
 }
@@ -596,17 +598,23 @@ process mpileup {
 
 process readcounts {
   label 'plotting'
-  tag "${sample_id}-${bam_type}-mapQ${min_mapQ}"
+  tag "${sample_id}-${bam_type}"
   memory '2GB'
   publishDir params.output, mode: 'copy', overwrite: true
 
   input:
-    tuple val(min_mapQ), val(sample_id), val(bam_type), file(mpileup) from mpileup_to_readcounts
+    tuple val(sample_id), val(bam_type), file(mpileup) from mpileup_to_readcounts
 
   output:
-    tuple val(min_mapQ), val(sample_id), val(bam_type), file("${sample_id}.${bam_type}.mapQ${min_mapQ}.readcounts.tsv") into readcounts_output
+    tuple val(sample_id), val(bam_type), file("${sample_id}.${bam_type}.readcounts.tsv") into readcounts_output
 
   script:
+  // positional argumets of mpileup2readcounts
+  // sample_to_parse [0 parses all samples]
+  // BQcut: min base quality [-5 sets no cut off]
+  // ignore_indels {true, false}
+  // min_ao: min number of non-ref reads to include site
+  // min_af: min allelic fraction in at least one sample to consider a site
   """
   cat ${mpileup} \
   | ${baseDir}/bin/mpileup2readcounts \
@@ -620,26 +628,29 @@ process readcounts {
   """
 }
 
-// group readcounts_output by mapQ and sample_id 
+// group readcounts_output by mapQ and sample_id
+readcounts_output.groupTuple(by: 0, size: 2)
+  .dump(tag: 'readcounts_output')
+  .set { readcounts_output }
 
 process plot_errors {
   label 'plotting'
-  tag "${sample_id}-${bam_type}-mapQ${min_mapQ}"
+  tag "${sample_id}"
   memory '2GB'
   publishDir params.output, mode: 'copy', overwrite: true
 
   input:
-    tuple val(min_mapQ), val(sample_id), val(bam_type), file(readcounts) from readcounts_output
+    tuple val(sample_id), list(bam_types),  file(readcounts) from readcounts_output
 
   output:
-    tuple val(min_mapQ), val(sample_id), file("*.{png,tsv}")
+    file("*.png")
 
   script:
   """
   ${baseDir}/bin/visualize_error.py \
-  -l ${sample_id}.${bam_type}.mapQ${min_mapQ} \
-  -o  ${sample_id}.${bam_type}.mapQ${min_mapQ} \
   ${readcounts} \
+  -l  ${bam_types} \
+  -o  ${sample_id} \
   2> log.txt
   """
 }
