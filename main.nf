@@ -46,6 +46,7 @@ process bwa {
    // Align fastqs
    label 'bwa'
    tag "${sample_id}"
+   publishDir params.output, mode: 'copy', overwrite: true
 
    input:
      file(reference_fasta) from reference_fasta
@@ -56,9 +57,6 @@ process bwa {
      tuple val(sample_id), file('*.bam') into align_ch
      tuple val(sample_id), val("standard"), file('*.standard.bam'), file('*.bai') into (qc_standard_bam, standard_pileup_bams)
      //"standar" bam is coordinate sorted for use in QC metrics and IGV
-   publishDir params.output, mode: 'copy', overwrite: true
-
-   cpus 8
    
    script:
    // bwa mem options:
@@ -239,14 +237,13 @@ process sort_filter_bam {
    // Sort alignment by query name
    label "sambamba"
    tag "${sample_id}"
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    input: 
     tuple sample_id, path(bam) from filter_consensus_bam_ch
 
    output:
     tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_realignment_ch)
-    
-   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -276,7 +273,6 @@ process realign_consensus {
     tuple sample_id, "${sample_id}.realigned.bam" into realign_ch
     tuple val(sample_id), val("realigned"), file('*realigned.bam'), file('*.bai') into qc_sorted_final_bam
     //"realigned" bam is coordinate sorted, for QC and IGV viewing
-   cpus 8 
 
    script:
    """
@@ -389,8 +385,7 @@ temp_x.mix(
 process simple_quality_metrics {
   label 'sambamba'
   tag "${sample_id}"
-  
-  cpus 2
+  cpus 4
   memory "2GB"
 
   input:
@@ -411,6 +406,7 @@ process simple_quality_metrics {
 process quality_metrics {
    label 'picard'
    tag "${sample_id}-${bam_type}"
+   publishDir params.output, mode: 'copy', overwrite: true
 
    input:
      file(picard_targets) from picard_targets
@@ -421,8 +417,6 @@ process quality_metrics {
    output:
      path("${sample_id}.${bam_type}.hs_metrics") into hs_metrics_out_ch
      path("${sample_id}.${bam_type}.insert_size_metrics") into insert_size_metrics_ch
-
-   publishDir params.output, mode: 'copy', overwrite: true
 
    script:
    """
@@ -448,18 +442,13 @@ process quality_metrics {
 process fastqc {
   label 'fastqc'
   tag "${sample_id}"
+  publishDir params.output, pattern: "*.html", mode: "copy", overwrite: true
 
   input:
     tuple sample_id, file(fastq1), file(fastq2) from fastqc_ch
 
   output:
     path "fastqc/*", type:"dir" into fastqc_report_ch
-
-  cpus 2
-
-  memory '8 GB'
-
-  publishDir params.output, pattern: "*.html", mode: "copy", overwrite: true
 
   script:
   fastqc_path = "fastqc/${sample_id}/"
@@ -472,19 +461,15 @@ process fastqc {
 process mosdepth {
    label 'mosdepth'
    tag "${sample_id}"
+   publishDir params.output, mode: 'copy', overwrite: true
 
    input:
       file(bed) from bed_baits
       tuple val(sample_id), val(bam_type), file(bam), file(bai) from mosdepth_qc_ch
+    
    output:
       file "${sample_id}.${bam_type}.regions.bed.gz"
       file "${sample_id}.${bam_type}.mosdepth.region.dist.txt" into mosdepth_out_ch
- 
-   memory '4 GB'
- 
-   cpus 4 // per docs, no benefit after 4 threads
- 
-   publishDir params.output, mode: 'copy', overwrite: true
 
    script:
    """
@@ -494,6 +479,7 @@ process mosdepth {
 
 process multiqc {
   label 'multiqc'
+  publishDir params.output, saveAs: {f -> "multiqc/${f}"}, mode: "copy", overwrite: true
 
   input:
      path('*') from fastqc_report_ch.flatMap().collect()
@@ -507,11 +493,6 @@ process multiqc {
      file "multiqc_report.${params.run_id}.html"
      file "multiqc_report.${params.run_id}_data/multiqc_data.json"
      file "qc_summary.${params.run_id}_mqc.csv"
-
-  memory '4 GB'
-  cpus 4
-
-  publishDir params.output, saveAs: {f -> "multiqc/${f}"}, mode: "copy", overwrite: true
 
   script:
   """
@@ -534,11 +515,9 @@ standard_pileup_bams.mix(final_pileup_bams)
 // Channel.from(1, 25).combine(pileup_bams).set { pileup_bams }
 
 process mpileup {
-  label 'bwa'
+  label 'pileup'
   tag "${sample_id}-${bam_type}"
-  //publishDir params.output, mode: 'copy', overwrite: true
-  memory '4GB'
-  cpus '2'
+  publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
   input:
     file(bed) from bed_targets
