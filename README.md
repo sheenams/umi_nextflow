@@ -1,7 +1,7 @@
 # umi_nextflow
 
-Developmental pipeline for high-sensitivity variant calling using UMI-tagged short
-sequence reads.
+Developmental pipeline for high-sensitivity variant calling using UMI-tagged
+short sequence reads.
 
 ## Dependencies
 
@@ -12,6 +12,8 @@ sequence reads.
 
 The pipeline is initiated from a directory containing paired-end fastqs. These
 fastqs should be of the format `<sample_id>.{1,2}.fastq.gz`
+
+One can intiate the pipeline using a command structured like so:
 
 `nextflow run main.nf -profile local --input_dir 302R_fastqs/ --run_id 302R 
 --downsample_reads 25000000`
@@ -30,7 +32,7 @@ like:
 ## Parameters
 
 **Required**
-*  `-profile` The config profile for the run environment. Options {local, uw_batch}.
+*  `-profile` The config profile for the run environment. Options {local, uw_batch}
 *  `--input_folder` Path to a directory containing paired-end fastqs. Trailing / is required
 *  `--run_id` An ID for the sequencing run
 
@@ -40,3 +42,7 @@ like:
 *  `--save_intermediate_output` Flag to save intermediate files to output directory
 *  `-resume` Flag to resume pipeline from a cached state, if possible
 
+## References
+
+The mpileup2readcounts binary was derived from the [IARC bioinformatics platform
+GitHub repository](https://github.com/IARCbioinfo/mpileup2readcounts).
