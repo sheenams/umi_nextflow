@@ -187,7 +187,7 @@ process fgbio_callconsensus{
 
    output:
      tuple val(sample_id), file('*.consensus.bam') into consensus_bam_ch
-     tuple val(sample_id), val("consensus"), file('*.consensus.bam') into (qc_consensus_bam, sort_consensus_bam_ch)
+     tuple val(sample_id), val("consensus"), file('*.consensus.bam') into qc_consensus_bam
 
    script:
    """
@@ -349,25 +349,25 @@ process realign_consensus {
    """
  }
 
-process sort_and_index_consensus_bam {
-   //  Sort alignment by position and index
-   label 'bwa'
-   tag "${sample_id}"
-   publishDir params.output, mode: 'copy', overwrite: true
+// process sort_and_index_consensus_bam {
+//    //  Sort alignment by position and index
+//    label 'bwa'
+//    tag "${sample_id}"
+//    publishDir params.output, mode: 'copy', overwrite: true
 
-   input: 
-     tuple val(sample_id), val(bam_type), file(bam) from sort_consensus_bam_ch
+//    input: 
+//      tuple val(sample_id), val(bam_type), file(bam) from sort_consensus_bam_ch
 
-   output:
-     tuple val(sample_id), val(bam_type), file("*.${bam_type}.sorted.bam"), file("*.bai") into consensus_pileup_bams
+//    output:
+//      tuple val(sample_id), val(bam_type), file("*.${bam_type}.sorted.bam"), file("*.bai") into consensus_pileup_bams
 
-   script:
-   """
-   cat ${bam} | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.${bam_type}.sorted.bam  2>log.txt
+//    script:
+//    """
+//    cat ${bam} | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.${bam_type}.sorted.bam  2>log.txt
      
-   samtools index ${sample_id}.${bam_type}.sorted.bam
-   """
- }
+//    samtools index ${sample_id}.${bam_type}.sorted.bam
+//    """
+//  }
 
 
 // ######### QC ######### //
@@ -407,7 +407,6 @@ process simple_quality_metrics {
   """
 
 }
-
 
 process quality_metrics {
    label 'picard'
@@ -493,7 +492,6 @@ process mosdepth {
    """
 }
 
-
 process multiqc {
   label 'multiqc'
 
@@ -538,7 +536,7 @@ standard_pileup_bams.mix(final_pileup_bams)
 process mpileup {
   label 'bwa'
   tag "${sample_id}-${bam_type}"
-  publishDir params.output, mode: 'copy', overwrite: true
+  //publishDir params.output, mode: 'copy', overwrite: true
   memory '4GB'
   cpus '2'
 
@@ -599,14 +597,13 @@ process mpileup {
 process readcounts {
   label 'plotting'
   tag "${sample_id}-${bam_type}"
-  memory '2GB'
   publishDir params.output, mode: 'copy', overwrite: true
 
   input:
     tuple val(sample_id), val(bam_type), file(mpileup) from mpileup_to_readcounts
 
   output:
-    tuple val(sample_id), val(bam_type), file("${sample_id}.${bam_type}.readcounts.tsv") into readcounts_output
+    tuple val(sample_id), file("${sample_id}.${bam_type}.readcounts.tsv") into readcounts_output
 
   script:
   // positional argumets of mpileup2readcounts
@@ -623,7 +620,7 @@ process readcounts {
   true \
   0 \
   0 \
-  > ${sample_id}.${bam_type}.mapQ${min_mapQ}.readcounts.tsv \
+  > ${sample_id}.${bam_type}.readcounts.tsv \
   2> log.txt
   """
 }
@@ -636,11 +633,10 @@ readcounts_output.groupTuple(by: 0, size: 2)
 process plot_errors {
   label 'plotting'
   tag "${sample_id}"
-  memory '2GB'
   publishDir params.output, mode: 'copy', overwrite: true
 
   input:
-    tuple val(sample_id), list(bam_types),  file(readcounts) from readcounts_output
+    tuple val(sample_id), file(readcounts) from readcounts_output
 
   output:
     file("*.png")
@@ -649,7 +645,7 @@ process plot_errors {
   """
   ${baseDir}/bin/visualize_error.py \
   ${readcounts} \
-  -l  ${bam_types} \
+  -s  ${sample_id} \
   -o  ${sample_id} \
   2> log.txt
   """
