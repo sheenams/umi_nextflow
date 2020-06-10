@@ -333,8 +333,6 @@ process realign_consensus {
    output:
      tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, final_pileup_bams, vardict_bam, umivarcal_bam, smc2_bam)
      
-   publishDir params.output, mode: 'copy', overwrite: true
-
    script:
    """
    picard -Xmx${task.memory.toGiga()}g -Djava.io.tmpdir=./ -Dpicard.useLegacyParser=false\
@@ -391,8 +389,6 @@ temp_x.mix(
 process simple_quality_metrics {
   label 'sambamba'
   tag "${sample_id}"
-  cpus 4
-  memory "2GB"
 
   input:
     tuple val(sample_id), val(bam_type), file(bam) from simple_count_qc_ch
@@ -457,8 +453,6 @@ process fastqc {
   output:
     path "fastqc/*", type:"dir" into fastqc_report_ch
 
-  publishDir params.output, pattern: "*.html", mode: "copy", overwrite: true
-
   script:
   fastqc_path = "fastqc/${sample_id}/"
   """
@@ -503,8 +497,6 @@ process multiqc {
      file "multiqc_report.${params.run_id}_data/multiqc_data.json"
      file "qc_summary.${params.run_id}_mqc.csv"
 
-  publishDir params.output, saveAs: {f -> "multiqc/${f}"}, mode: "copy", overwrite: true
-
   script:
   """
   preprocess_qc.py counts *.flagstats.txt --output qc_counts.${params.run_id}_mqc.csv
@@ -521,7 +513,9 @@ process multiqc {
 /////////////////////
 
 process vardict {
-  label 'vardict'
+  label 'vardict'  
+  tag "${sample_id}"
+  publishDir params.output, mode: 'copy', overwrite: true
 
   input:
     file(bed) from bed_targets
@@ -531,8 +525,6 @@ process vardict {
 
   output:
     file("${sample_id}.${bam_type}.vardict.vcf")
-
-  publishDir params.output, mode: 'copy', overwrite: true
 
   // -f double The threshold for allele frequency, default: 0.01 or 1%
   // -c INT  The column for chromosome
@@ -572,6 +564,10 @@ process vardict {
 
 // process umivarcal_bam {
 //   label 'bwa'
+//   tag "${sample_id}"
+
+//   publishDir params.output, mode: 'copy', overwrite: true
+
 
 //   input:
 //     tuple val(sample_id), val(bam_type), file(bam), file(bai) from umivarcal_bam
@@ -579,7 +575,6 @@ process vardict {
 //   output:
 //     tuple val(sample_id), val(bam_type), file('*.umivarcal.sam') into umivarcal_ready_sam
 
-//   publishDir params.output, mode: 'copy', overwrite: true
 
 //   // Copy the UMI from the RX:Z  into the read name in field 1
 //   // Add 'chr' to the header and to each line, required by umi-varcal
@@ -594,6 +589,10 @@ process vardict {
 
 // process umivarcal{
 //   label "umivarcal" 
+//   tag "${sample_id}"
+
+//   publishDir params.output, mode: 'copy', overwrite: true
+
 
 //   input:
 //     file(bed) from bed_targets_chr
@@ -607,7 +606,6 @@ process vardict {
 //     file("${sample_id}.${bam_type}.umivarcal.variants")
 
 
-//   publishDir params.output, mode: 'copy', overwrite: true
 
 //   //This program is extremely unstable 
 //   errorStrategy 'ignore'
@@ -632,6 +630,9 @@ process vardict {
 
 process smc2{
   label "smc2" 
+  tag "${sample_id}"
+
+  publishDir params.output, mode: 'copy', overwrite: true
 
   input:
     file(bed) from bed_targets
@@ -642,7 +643,6 @@ process smc2{
   output:
     file("${sample_id}.${bam_type}.smCounter.cut.vcf")
 
-  publishDir params.output, mode: 'copy', overwrite: true
 
   //Some input files are in the docker image, packaged with program
   script:  
