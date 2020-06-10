@@ -27,8 +27,8 @@ params.save_intermediate_output = false
 // Assay specific files
 picard_targets = file(params.picard_targets)
 picard_baits = file(params.picard_baits)
+bed_baits = file(params.bed_baits)
 bed_targets = file(params.bed_targets)
-bed_targets_chr = file(params.bed_targets_chr)
 
 // Reference genome is used multiple times
 reference_fasta = file(params.ref_fasta)
@@ -51,6 +51,7 @@ process bwa {
    // Align fastqs
    label 'bwa'
    tag "${sample_id}"
+   publishDir params.output, mode: 'copy', overwrite: true
 
    input:
      file(reference_fasta) from reference_fasta
@@ -59,10 +60,9 @@ process bwa {
  
    output:
      tuple val(sample_id), file('*.bam') into align_ch
-     tuple val(sample_id), val("standard"), file('*.standard.bam'), file('*.bai') into qc_standard_bam
+     tuple val(sample_id), val("standard"), file('*.standard.bam'), file('*.bai') into (qc_standard_bam, standard_pileup_bams)
      //"standar" bam is coordinate sorted for use in QC metrics and IGV
-   publishDir params.output, mode: 'copy', overwrite: true
-
+   
    script:
    // bwa mem options:
    // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?, -p using paired end input
@@ -131,6 +131,7 @@ process fgbio_setmateinformation{
   // and that the mate reference and mate start position are correct.
    label "fgbio"
    tag "${sample_id}"
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    input: 
     tuple sample_id, path(bam) from set_mate_ch
@@ -138,8 +139,6 @@ process fgbio_setmateinformation{
    output:
     tuple sample_id, "${sample_id}.mateinfo.bam" into mate_info_bam_ch
     tuple val(sample_id), val("set_mate"), file('*.bam') into temp_qc_mate_bam
-
-   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -154,6 +153,7 @@ process fgbio_group_umi {
    // Groups reads together that appear to have come from the same original molecule.
    label "fgbio"
    tag "${sample_id}"
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    input: 
     tuple sample_id, path(bam) from mate_info_bam_ch
@@ -162,8 +162,6 @@ process fgbio_group_umi {
      tuple val(sample_id), file('*.grpumi.bam') into grp_umi_bam_ch
      tuple val(sample_id), val("grpumi"), file('*.grpumi.bam') into qc_grpumi_bam
      file('*.grpumi.histogram') into histogram_ch
-
-   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -184,7 +182,8 @@ process fgbio_callconsensus{
    //   calls each end of a pair independently, and does not jointly call bases that overlap within a pair. Insertion or deletion
    //   errors in the reads are not considered in the consensus model.integrating the unique molecular tags
    label 'fgbio'
-   tag "${sample_id}"
+   tag "${sample_id}" 
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    input: 
     tuple sample_id, path(bam) from grp_umi_bam_ch
@@ -192,8 +191,6 @@ process fgbio_callconsensus{
    output:
      tuple val(sample_id), file('*.consensus.bam') into consensus_bam_ch
      tuple val(sample_id), val("consensus"), file('*.consensus.bam') into qc_consensus_bam
-
-   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -215,6 +212,7 @@ process fgbio_callconsensus{
 process fgbio_filterconsensus{
    label "fgbio"
    tag "${sample_id}"
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    input: 
      file(reference_fasta) from reference_fasta
@@ -224,8 +222,6 @@ process fgbio_filterconsensus{
    output:
      tuple val(sample_id), file('*.filtered_consensus.bam') into filter_consensus_bam_ch
      tuple val(sample_id), val("filtered_consensus"), file('*.filtered_consensus.bam') into qc_filtered_consensus_bam
-
-   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -246,14 +242,13 @@ process sort_filter_bam {
    // Sort alignment by query name
    label "sambamba"
    tag "${sample_id}"
+   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    input: 
     tuple sample_id, path(bam) from filter_consensus_bam_ch
 
    output:
     tuple sample_id, "${sample_id}.sorted_consensus.bam" into (sorted_consensus_ch, sorted_consensus_realignment_ch)
-    
-   publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
    """
@@ -328,6 +323,7 @@ process realign_consensus {
   //Merge consensus bam (unaligned) with aligned bam, which is queryname sorted
    label 'picard'
    tag "${sample_id}"
+   publishDir params.output, mode: 'copy', overwrite: true
 
    input:
     file(reference_fasta) from reference_fasta
@@ -335,7 +331,7 @@ process realign_consensus {
     tuple sample_id, path(sorted_bam), path(sorted_filtered_bam) from merge_ch
 
    output:
-     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, mpileup_bam, vardict_bam, umivarcal_bam, smc2_bam)
+     tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, final_pileup_bams, vardict_bam, umivarcal_bam, smc2_bam)
      
    publishDir params.output, mode: 'copy', overwrite: true
 
@@ -354,6 +350,27 @@ process realign_consensus {
    mv ${sample_id}.final.bai ${sample_id}.final.bam.bai
    """
  }
+
+// process sort_and_index_consensus_bam {
+//    //  Sort alignment by position and index
+//    label 'bwa'
+//    tag "${sample_id}"
+//    publishDir params.output, mode: 'copy', overwrite: true
+
+//    input: 
+//      tuple val(sample_id), val(bam_type), file(bam) from sort_consensus_bam_ch
+
+//    output:
+//      tuple val(sample_id), val(bam_type), file("*.${bam_type}.sorted.bam"), file("*.bai") into consensus_pileup_bams
+
+//    script:
+//    """
+//    cat ${bam} | samtools sort -t${task.cpus} -m4G - -o ${sample_id}.${bam_type}.sorted.bam  2>log.txt
+     
+//    samtools index ${sample_id}.${bam_type}.sorted.bam
+//    """
+//  }
+
 
 // ######### QC ######### //
 
@@ -374,7 +391,9 @@ temp_x.mix(
 process simple_quality_metrics {
   label 'sambamba'
   tag "${sample_id}"
-  
+  cpus 4
+  memory "2GB"
+
   input:
     tuple val(sample_id), val(bam_type), file(bam) from simple_count_qc_ch
 
@@ -392,7 +411,8 @@ process simple_quality_metrics {
 
 process quality_metrics {
    label 'picard'
-   tag "${sample_id}"
+   tag "${sample_id}-${bam_type}"
+   publishDir params.output, mode: 'copy', overwrite: true
 
    input:
      file(picard_targets) from picard_targets
@@ -405,8 +425,6 @@ process quality_metrics {
      path("${sample_id}.${bam_type}.hs_metrics") into hs_metrics_out_ch
      path("${sample_id}.${bam_type}.insert_size_metrics") into insert_size_metrics_ch
 
-   publishDir params.output, mode: 'copy', overwrite: true
-   
    script:
    """
  
@@ -431,6 +449,7 @@ process quality_metrics {
 process fastqc {
   label 'fastqc'
   tag "${sample_id}"
+  publishDir params.output, pattern: "*.html", mode: "copy", overwrite: true
 
   input:
     tuple sample_id, file(fastq1), file(fastq2) from fastqc_ch
@@ -451,15 +470,15 @@ process fastqc {
 process mosdepth {
    label 'mosdepth'
    tag "${sample_id}"
+   publishDir params.output, mode: 'copy', overwrite: true
 
    input:
-      file(bed) from bed_targets
+      file(bed) from bed_baits
       tuple val(sample_id), val(bam_type), file(bam), file(bai) from mosdepth_qc_ch
+    
    output:
       file "${sample_id}.${bam_type}.regions.bed.gz"
       file "${sample_id}.${bam_type}.mosdepth.region.dist.txt" into mosdepth_out_ch
- 
-   publishDir params.output, mode: 'copy', overwrite: true
 
    script:
    """
@@ -467,9 +486,9 @@ process mosdepth {
    """
 }
 
-
 process multiqc {
   label 'multiqc'
+  publishDir params.output, saveAs: {f -> "multiqc/${f}"}, mode: "copy", overwrite: true
 
   input:
      path('*') from fastqc_report_ch.flatMap().collect()
@@ -501,38 +520,6 @@ process multiqc {
 // Variant Calling //
 /////////////////////
 
-process mpileup {
-  label 'bwa'
-
-  input:
-    file(bed) from bed_targets
-    file(reference_fasta) from reference_fasta
-    file("*") from mpileup_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
-    tuple val(sample_id), val(bam_type), file(bam), file(bai) from mpileup_bam
-
-  output:
-    file("${sample_id}.${bam_type}.mpileup")
-
-  publishDir params.output, mode: 'copy', overwrite: true
-
-  script:
-  //   -A, --count-orphans     do not discard anomalous read pairs                                                                                                
-  //  -B, --no-BAQ            disable BAQ (per-Base Alignment Quality)                                                                                           
-  //  -d, --max-depth INT     max per-file depth; avoids excessive memory usage [8000]                                                                           
-  //  -E, --redo-BAQ          recalculate BAQ on the fly, ignore existing BQs                                                                                    
-  //  -q, --min-MQ INT        skip alignments with mapQ smaller than INT [0]                                                                                     
-  // -Q, --min-BQ INT        skip bases with baseQ/BAQ smaller than INT [13]   
-  // -l, --positions FILE    skip unlisted positions (chr pos) or regions (BED)                                                                                 
-  """
-  samtools mpileup \
-  --fasta-ref ${reference_fasta} \
-  --max-depth 1000000 \
-  --count-orphans \
-  --redo-BAQ \
-  ${bam}
-  > ${sample_id}.${bam_type}.mpileup
-  """
-}
 process vardict {
   label 'vardict'
 
@@ -673,5 +660,126 @@ process smc2{
   --srBed /srv/qgen/data/annotation/simpleRepeat.full.bed \
   --umiTag RX \
   --hpLen 8 --mismatchThr 6.0 --primerDist 2 --primerSide 1 --minAltUMI 3 --maxAltAllele 2 
+  """
+}
+
+standard_pileup_bams.mix(final_pileup_bams)
+  .set { pileup_bams }
+
+// Channel.from(1, 25).combine(pileup_bams).set { pileup_bams }
+
+process mpileup {
+  label 'pileup'
+  tag "${sample_id}-${bam_type}"
+  publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
+
+  input:
+    file(bed) from bed_targets
+    file(reference_fasta) from reference_fasta
+    file("*") from mpileup_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
+    tuple val(sample_id), val(bam_type), file(bam), file(bai) from pileup_bams
+
+  output:
+    tuple val(sample_id), val(bam_type), file("${sample_id}.${bam_type}.mpileup") into mpileup_to_readcounts
+
+  script:
+  //   -A, --count-orphans     do not discard anomalous read pairs                                                                                                
+  //  -d, --max-depth INT     max per-file depth; avoids excessive memory usage [8000]                                                                           
+    //  -q, --min-MQ INT        skip alignments with mapQ smaller than INT [0]                                                                                     
+  // -Q, --min-BQ INT        skip bases with baseQ/BAQ smaller than INT [13]   
+  // -l, --positions FILE    skip unlisted positions (chr pos) or regions (BED)                                                                                 
+  
+  //Need to decide which option to use: 
+  //  -E, --redo-BAQ          recalculate BAQ on the fly, ignore existing BQs                                                                                    
+  //  -B, --no-BAQ            disable BAQ (per-Base Alignment Quality)                                                                                           
+  """
+  samtools mpileup \
+  --fasta-ref ${reference_fasta} \
+  --max-depth 1000000 \
+  --count-orphans \
+  --redo-BAQ \
+  --output-MQ \
+  --min-MQ 20 \
+  --positions ${bed} \
+  ${bam} \
+  > ${sample_id}.${bam_type}.mpileup \
+  2> log.txt
+  """
+}
+
+// process readcounts {
+//   label 'varscan'
+//   publishDir params.output, mode: 'copy', overwrite: true
+
+//   input:
+//     tuple val(sample_id), file(mpileup) from mpileup_to_readcounts
+
+//   output:
+//     tuple val(sample_id), file("${sample_id}.readcounts.tsv") into readcounts_to_plots
+
+//   script:
+//   """
+//   java -Xmx${task.memory.toGiga()}g \
+//   -jar /opt/VarScan.jar readcounts \
+//   ${mpileup} \
+//   --min-base-qual 0 \
+//   --output-file ${sample_id}.readcounts.tsv
+//   """
+// }
+
+process readcounts {
+  label 'plotting'
+  tag "${sample_id}-${bam_type}"
+  publishDir params.output, mode: 'copy', overwrite: true
+
+  input:
+    tuple val(sample_id), val(bam_type), file(mpileup) from mpileup_to_readcounts
+
+  output:
+    tuple val(sample_id), file("${sample_id}.${bam_type}.readcounts.tsv") into readcounts_output
+
+  script:
+  // positional argumets of mpileup2readcounts
+  // sample_to_parse [0 parses all samples]
+  // BQcut: min base quality [-5 sets no cut off]
+  // ignore_indels {true, false}
+  // min_ao: min number of non-ref reads to include site
+  // min_af: min allelic fraction in at least one sample to consider a site
+  """
+  cat ${mpileup} \
+  | ${baseDir}/bin/mpileup2readcounts \
+  0 \
+  -5 \
+  true \
+  0 \
+  0 \
+  > ${sample_id}.${bam_type}.readcounts.tsv \
+  2> log.txt
+  """
+}
+
+// group readcounts_output by mapQ and sample_id
+readcounts_output.groupTuple(by: 0, size: 2)
+  .dump(tag: 'readcounts_output')
+  .set { readcounts_output }
+
+process plot_errors {
+  label 'plotting'
+  tag "${sample_id}"
+  publishDir params.output, mode: 'copy', overwrite: true
+
+  input:
+    tuple val(sample_id), file(readcounts) from readcounts_output
+
+  output:
+    file("*.png")
+
+  script:
+  """
+  ${baseDir}/bin/visualize_error.py \
+  ${readcounts} \
+  -s  ${sample_id} \
+  -o  ${sample_id} \
+  2> log.txt
   """
 }
