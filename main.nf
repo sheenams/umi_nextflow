@@ -63,8 +63,6 @@ process bwa {
      //"standar" bam is coordinate sorted for use in QC metrics and IGV
    publishDir params.output, mode: 'copy', overwrite: true
 
-   cpus 8
-   
    script:
    // bwa mem options:
    // -K seed, -C pass tags from FASTQ -> alignment, -Y recommended by GATK?, -p using paired end input
@@ -141,8 +139,6 @@ process fgbio_setmateinformation{
     tuple sample_id, "${sample_id}.mateinfo.bam" into mate_info_bam_ch
     tuple val(sample_id), val("set_mate"), file('*.bam') into temp_qc_mate_bam
 
-   memory "32G"
-
    publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
    script:
@@ -166,9 +162,6 @@ process fgbio_group_umi {
      tuple val(sample_id), file('*.grpumi.bam') into grp_umi_bam_ch
      tuple val(sample_id), val("grpumi"), file('*.grpumi.bam') into qc_grpumi_bam
      file('*.grpumi.histogram') into histogram_ch
-
-
-   memory "32G"
 
    publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
@@ -199,8 +192,6 @@ process fgbio_callconsensus{
    output:
      tuple val(sample_id), file('*.consensus.bam') into consensus_bam_ch
      tuple val(sample_id), val("consensus"), file('*.consensus.bam') into qc_consensus_bam
-
-   memory "32G"
 
    publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
@@ -233,8 +224,6 @@ process fgbio_filterconsensus{
    output:
      tuple val(sample_id), file('*.filtered_consensus.bam') into filter_consensus_bam_ch
      tuple val(sample_id), val("filtered_consensus"), file('*.filtered_consensus.bam') into qc_filtered_consensus_bam
-
-   memory "32G"
 
    publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
 
@@ -293,7 +282,6 @@ process realign_consensus {
     tuple sample_id, "${sample_id}.realigned.bam" into realign_ch
     tuple val(sample_id), val("realigned"), file('*realigned.bam'), file('*.bai') into qc_sorted_final_bam
     //"realigned" bam is coordinate sorted, for QC and IGV viewing
-   cpus 8 
 
    script:
    """
@@ -350,7 +338,6 @@ process realign_consensus {
      tuple val(sample_id), val("final"), file('*.final.bam'), file('*.bai') into (qc_final_bam, mpileup_bam, vardict_bam, umivarcal_bam, smc2_bam)
      
    publishDir params.output, mode: 'copy', overwrite: true
-   memory "32G"
 
    script:
    """
@@ -388,9 +375,6 @@ process simple_quality_metrics {
   label 'sambamba'
   tag "${sample_id}"
   
-  cpus 2
-  memory "2GB"
-
   input:
     tuple val(sample_id), val(bam_type), file(bam) from simple_count_qc_ch
 
@@ -423,8 +407,6 @@ process quality_metrics {
 
    publishDir params.output, mode: 'copy', overwrite: true
    
-   memory "32G"
-
    script:
    """
  
@@ -456,10 +438,6 @@ process fastqc {
   output:
     path "fastqc/*", type:"dir" into fastqc_report_ch
 
-  cpus 2
-
-  memory '8 GB'
-
   publishDir params.output, pattern: "*.html", mode: "copy", overwrite: true
 
   script:
@@ -480,10 +458,6 @@ process mosdepth {
    output:
       file "${sample_id}.${bam_type}.regions.bed.gz"
       file "${sample_id}.${bam_type}.mosdepth.region.dist.txt" into mosdepth_out_ch
- 
-   memory '4 GB'
- 
-   cpus 4 // per docs, no benefit after 4 threads
  
    publishDir params.output, mode: 'copy', overwrite: true
 
@@ -509,9 +483,6 @@ process multiqc {
      file "multiqc_report.${params.run_id}.html"
      file "multiqc_report.${params.run_id}_data/multiqc_data.json"
      file "qc_summary.${params.run_id}_mqc.csv"
-
-  memory '4 GB'
-  cpus 4
 
   publishDir params.output, saveAs: {f -> "multiqc/${f}"}, mode: "copy", overwrite: true
 
@@ -543,9 +514,6 @@ process mpileup {
     file("${sample_id}.${bam_type}.mpileup")
 
   publishDir params.output, mode: 'copy', overwrite: true
-
-  memory '4GB'
-  cpus '2'
 
   script:
   //   -A, --count-orphans     do not discard anomalous read pairs                                                                                                
@@ -579,8 +547,6 @@ process vardict {
 
   publishDir params.output, mode: 'copy', overwrite: true
 
-  memory '4GB'
-  cpus '2'
   // -f double The threshold for allele frequency, default: 0.01 or 1%
   // -c INT  The column for chromosome
   // -S INT The column for the region start, e.g. gene start
@@ -617,69 +583,64 @@ process vardict {
    """
  }
 
-process umivarcal_bam {
-  label 'bwa'
+// process umivarcal_bam {
+//   label 'bwa'
 
-  input:
-    tuple val(sample_id), val(bam_type), file(bam), file(bai) from umivarcal_bam
+//   input:
+//     tuple val(sample_id), val(bam_type), file(bam), file(bai) from umivarcal_bam
 
-  output:
-    tuple val(sample_id), val(bam_type), file('*.umivarcal.sam') into umivarcal_ready_sam
+//   output:
+//     tuple val(sample_id), val(bam_type), file('*.umivarcal.sam') into umivarcal_ready_sam
 
-  publishDir params.output, mode: 'copy', overwrite: true
+//   publishDir params.output, mode: 'copy', overwrite: true
 
-  memory '4GB'
-  cpus '2'
-  // Copy the UMI from the RX:Z  into the read name in field 1
-  // Add 'chr' to the header and to each line, required by umi-varcal
-  // May require removing GL chromosomes due to samtools naming issue, still testing that
-  script:                                                                               
-  """
-  samtools view -h ${bam} \
-  | awk -F \$'\t' 'BEGIN {OFS = FS} { if(\$0 ~ "^@") {split(\$2,a,":");gsub(/SN:[^\t]*/, "SN:chr"a[2]); print} else if (\$3 != "*") {;split(\$23,a,":"); gsub(\$1,\$1"_"a[3]); sub("^", "chr",\$3); print} }' > ${sample_id}.${bam_type}.umivarcal.sam
+//   // Copy the UMI from the RX:Z  into the read name in field 1
+//   // Add 'chr' to the header and to each line, required by umi-varcal
+//   // May require removing GL chromosomes due to samtools naming issue, still testing that
+//   script:                                                                               
+//   """
+//   samtools view -h ${bam} \
+//   | awk -F \$'\t' 'BEGIN {OFS = FS} { if(\$0 ~ "^@") {split(\$2,a,":");gsub(/SN:[^\t]*/, "SN:chr"a[2]); print} else if (\$3 != "*") {;split(\$23,a,":"); gsub(\$1,\$1"_"a[3]); sub("^", "chr",\$3); print} }' > ${sample_id}.${bam_type}.umivarcal.sam
   
-  """
-}
+//   """
+// }
 
-// Run UMI Varcal
-process umivarcal{
-  label "umivarcal" 
+// process umivarcal{
+//   label "umivarcal" 
 
-  input:
-    file(bed) from bed_targets_chr
-    file(reference_fasta_chr) from reference_fasta_chr
-    file("*") from umivarcal_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
-    tuple val(sample_id), val(bam_type), file(sam) from umivarcal_ready_sam
+//   input:
+//     file(bed) from bed_targets_chr
+//     file(reference_fasta_chr) from reference_fasta_chr
+//     file("*") from umivarcal_ref_index.filter{ it.toString() =~ /fai$/ }.collect()
+//     tuple val(sample_id), val(bam_type), file(sam) from umivarcal_ready_sam
 
-  output:
-    file("${sample_id}.${bam_type}.umivarcal.vcf")
-    file("${sample_id}.${bam_type}.umivarcal.gvcf")
-    file("${sample_id}.${bam_type}.umivarcal.variants")
+//   output:
+//     file("${sample_id}.${bam_type}.umivarcal.vcf")
+//     file("${sample_id}.${bam_type}.umivarcal.gvcf")
+//     file("${sample_id}.${bam_type}.umivarcal.variants")
 
 
-  publishDir params.output, mode: 'copy', overwrite: true
+//   publishDir params.output, mode: 'copy', overwrite: true
 
-  memory '4GB'
-  cpus '2'
-  //This program is extremely unstable 
-  errorStrategy 'ignore'
+//   //This program is extremely unstable 
+//   errorStrategy 'ignore'
 
-  script:                                                                               
-  """
-  python3 /home/umi-varcal/umi-varcal.py call \
-  --fasta ${reference_fasta_chr} \
-  --bed ${bed} \
-  --input ${sam} \
-  --output ${sample_id}.${bam_type}.umivarcal \
-  --cores ${task.cpus} \
-  --min_base_quality 1 \
-  --min_read_quality 1 \
-  --min_mapping_quality 1 \
-  --min_variant_umi 1 \
-  --gvcf True \
-  --alpha 0.9 
-  """
-}
+//   script:                                                                               
+//   """
+//   python3 /home/umi-varcal/umi-varcal.py call \
+//   --fasta ${reference_fasta_chr} \
+//   --bed ${bed} \
+//   --input ${sam} \
+//   --output ${sample_id}.${bam_type}.umivarcal \
+//   --cores ${task.cpus} \
+//   --min_base_quality 1 \
+//   --min_read_quality 1 \
+//   --min_mapping_quality 1 \
+//   --min_variant_umi 1 \
+//   --gvcf True \
+//   --alpha 0.9 
+//   """
+// }
 
 
 process smc2{
@@ -696,8 +657,6 @@ process smc2{
 
   publishDir params.output, mode: 'copy', overwrite: true
 
-  memory '4GB'
-  cpus '2'
   //Some input files are in the docker image, packaged with program
   script:  
   """
