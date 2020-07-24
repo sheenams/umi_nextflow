@@ -549,7 +549,7 @@ process vardict {
    -E 3 \
    -g 4 \
    -F 0 \
-   -r 1 \
+   -r 10 \
    -q 1 \
    -VS LENIENT \
    -k 1 \
@@ -659,7 +659,8 @@ process smc2{
   --repBed /srv/qgen/data/annotation/SR_LC_SL.full.bed \
   --srBed /srv/qgen/data/annotation/simpleRepeat.full.bed \
   --umiTag RX \
-  --hpLen 8 --mismatchThr 6.0 --primerDist 2 --primerSide 1 --minAltUMI 3 --maxAltAllele 2 
+  --minAltUMI 1 \
+  --maxAltAllele 2 
   """
 }
 
