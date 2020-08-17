@@ -549,8 +549,8 @@ process vardict {
    -E 3 \
    -g 4 \
    -F 0 \
-   -r 10 \
-   -q 1 \
+   -r 1 \
+   -q 10 \
    -VS LENIENT \
    -k 1 \
    ${bed} \
