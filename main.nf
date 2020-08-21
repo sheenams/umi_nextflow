@@ -672,7 +672,7 @@ standard_pileup_bams.mix(final_pileup_bams)
 process mpileup {
   label 'pileup'
   tag "${sample_id}-${bam_type}"
-  publishDir path: params.output, mode: 'copy', overwrite: true, enabled: params.save_intermediate_output
+  publishDir path: params.output, mode: 'copy', overwrite: true //enabled: params.save_intermediate_output
 
   input:
     file(bed) from bed_targets
